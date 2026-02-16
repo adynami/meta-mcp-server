@@ -5,14 +5,15 @@ import { computeMetrics, pctChange, type RawInsightRow, type ComputedMetrics } f
 
 export const analystTools = [
   {
-    name: 'get_account_intelligence',
-    description: `High-density intelligence report for the ad account. Returns:
-- Period-over-period trend analysis (spend, CPA, ROAS, CTR changes)
-- Top 3 campaigns by ROAS
-- Top 3 "bleeder" campaigns (high spend, zero conversions)
-- Account health summary
+    name: 'meta_account_intelligence',
+    description: `Generate a high-density intelligence report for the ad account. Use this when the user asks "how are my ads doing?", wants a performance overview, or needs to identify problems.
 
-Use this when the user asks "how are my ads doing?" or wants an overview.`,
+Returns a pre-built text summary (not raw data) containing:
+- Period-over-period trends (spend, CPA, ROAS, CTR changes vs previous period)
+- Top 3 campaigns by ROAS (best performers)
+- Top 3 "bleeder" campaigns (spending with zero conversions)
+
+Use response_format="concise" if you only need the summary text. Use "detailed" if you also need the raw trend numbers for follow-up calculations.`,
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -21,14 +22,19 @@ Use this when the user asks "how are my ads doing?" or wants an overview.`,
           enum: ['last_3d', 'last_7d', 'last_14d', 'last_30d', 'last_90d', 'this_month', 'last_month'],
           description: 'Analysis period (default: last_7d)',
         },
+        response_format: {
+          type: 'string',
+          enum: ['concise', 'detailed'],
+          description: 'concise = summary text only (~200 tokens), detailed = summary + structured trend data (default: concise)',
+        },
       },
     },
   },
 ];
 
 export async function handleAnalystTool(name: string, args: any): Promise<any> {
-  if (name === 'get_account_intelligence') return getAccountIntelligence(args);
-  throw new Error(`Unknown analyst tool: ${name}`);
+  if (name === 'meta_account_intelligence') return getAccountIntelligence(args);
+  throw new Error(`Unknown tool: ${name}`);
 }
 
 async function getAccountIntelligence(args: any): Promise<any> {
@@ -37,7 +43,6 @@ async function getAccountIntelligence(args: any): Promise<any> {
   const previousRange = resolvePreviousPeriod(rangeKey);
   const account = await getAccountContext();
 
-  // Fetch current & previous period + campaign breakdown in parallel
   const [currentRaw, previousRaw, campaignBreakdown] = await Promise.all([
     fetchAccountInsights({ time_range: currentRange }),
     fetchAccountInsights({ time_range: previousRange }),
@@ -52,61 +57,49 @@ async function getAccountIntelligence(args: any): Promise<any> {
   const current = currentRaw.length ? computeMetrics(currentRaw[0] as RawInsightRow) : zeroMetrics();
   const previous = previousRaw.length ? computeMetrics(previousRaw[0] as RawInsightRow) : zeroMetrics();
 
-  // Campaign-level analysis
   const campaigns = campaignBreakdown.map((row: any) => ({
-    id: row.campaign_id,
     name: row.campaign_name,
     metrics: computeMetrics(row as RawInsightRow),
   }));
 
-  // Top performers by ROAS (must have >0 spend and >0 conversions)
   const topByRoas = campaigns
     .filter((c: any) => c.metrics.roas > 0)
     .sort((a: any, b: any) => b.metrics.roas - a.metrics.roas)
     .slice(0, 3);
 
-  // Bleeders: high spend, zero conversions
   const bleeders = campaigns
     .filter((c: any) => c.metrics.spend > 0 && c.metrics.conversions === 0)
     .sort((a: any, b: any) => b.metrics.spend - a.metrics.spend)
     .slice(0, 3);
 
-  // Build the intelligence report
-  const report = {
-    account: { name: account.name, currency: account.currency, timezone: account.timezone },
-    period: { current: `${currentRange.since} to ${currentRange.until}`, previous: `${previousRange.since} to ${previousRange.until}` },
+  const ccy = account.currency;
+  const summary = buildSummaryText(current, previous, topByRoas, bleeders, ccy, currentRange, previousRange);
 
+  // Concise mode: just the summary text — minimal tokens
+  if (args.response_format !== 'detailed') {
+    return { summary };
+  }
+
+  // Detailed mode: summary + structured data for follow-up
+  return {
+    summary,
+    account: { name: account.name, currency: ccy, timezone: account.timezone },
+    period: { current: `${currentRange.since} to ${currentRange.until}`, previous: `${previousRange.since} to ${previousRange.until}` },
     trends: {
       spend: { current: current.spend, previous: previous.spend, change: pctChange(current.spend, previous.spend) },
-      impressions: { current: current.impressions, previous: previous.impressions, change: pctChange(current.impressions, previous.impressions) },
-      clicks: { current: current.clicks, previous: previous.clicks, change: pctChange(current.clicks, previous.clicks) },
       ctr: { current: current.ctr, previous: previous.ctr, change: pctChange(current.ctr, previous.ctr) },
       cpc: { current: current.cpc, previous: previous.cpc, change: pctChange(current.cpc, previous.cpc) },
       conversions: { current: current.conversions, previous: previous.conversions, change: pctChange(current.conversions, previous.conversions) },
       cpa: { current: current.cpa, previous: previous.cpa, change: pctChange(current.cpa, previous.cpa) },
       roas: { current: current.roas, previous: previous.roas, change: pctChange(current.roas, previous.roas) },
     },
-
     top_performers: topByRoas.map((c: any) => ({
-      campaign: c.name,
-      roas: c.metrics.roas,
-      spend: c.metrics.spend,
-      conversions: c.metrics.conversions,
-      revenue: c.metrics.conversion_value,
+      campaign: c.name, roas: c.metrics.roas, spend: c.metrics.spend, revenue: c.metrics.conversion_value,
     })),
-
     bleeders: bleeders.map((c: any) => ({
-      campaign: c.name,
-      spend: c.metrics.spend,
-      impressions: c.metrics.impressions,
-      clicks: c.metrics.clicks,
-      note: 'Spending with ZERO conversions',
+      campaign: c.name, spend: c.metrics.spend, clicks: c.metrics.clicks,
     })),
-
-    summary: buildSummaryText(current, previous, topByRoas, bleeders, account.currency),
   };
-
-  return report;
 }
 
 function buildSummaryText(
@@ -114,34 +107,23 @@ function buildSummaryText(
   previous: ComputedMetrics,
   topPerformers: any[],
   bleeders: any[],
-  currency: string,
+  ccy: string,
+  currentRange: { since: string; until: string },
+  previousRange: { since: string; until: string },
 ): string {
   const lines: string[] = [];
 
-  lines.push(`## Period Overview`);
-  lines.push(`Spend: ${currency} ${current.spend} (${pctChange(current.spend, previous.spend)} vs prev period)`);
-  lines.push(`Conversions: ${current.conversions} (${pctChange(current.conversions, previous.conversions)})`);
-  lines.push(`ROAS: ${current.roas}x (${pctChange(current.roas, previous.roas)})`);
-  lines.push(`CPA: ${currency} ${current.cpa} (${pctChange(current.cpa, previous.cpa)})`);
-  lines.push(`CTR: ${current.ctr}% (${pctChange(current.ctr, previous.ctr)})`);
-  lines.push('');
+  lines.push(`Period: ${currentRange.since} to ${currentRange.until} vs ${previousRange.since} to ${previousRange.until}`);
+  lines.push(`Spend: ${ccy} ${current.spend} (${pctChange(current.spend, previous.spend)})`);
+  lines.push(`Conversions: ${current.conversions} (${pctChange(current.conversions, previous.conversions)}) | CPA: ${ccy} ${current.cpa} (${pctChange(current.cpa, previous.cpa)})`);
+  lines.push(`ROAS: ${current.roas}x (${pctChange(current.roas, previous.roas)}) | CTR: ${current.ctr}% (${pctChange(current.ctr, previous.ctr)})`);
 
   if (topPerformers.length) {
-    lines.push(`## Top ${topPerformers.length} Campaigns by ROAS`);
-    for (const c of topPerformers) {
-      lines.push(`- "${c.name}": ${c.metrics.roas}x ROAS, ${currency} ${c.metrics.conversion_value} revenue on ${currency} ${c.metrics.spend} spend`);
-    }
-    lines.push('');
+    lines.push(`Top by ROAS: ${topPerformers.map((c: any) => `"${c.name}" ${c.metrics.roas}x`).join(', ')}`);
   }
 
   if (bleeders.length) {
-    lines.push(`## ${bleeders.length} Bleeder Campaign(s) (Spend with 0 Conversions)`);
-    for (const c of bleeders) {
-      lines.push(`- "${c.name}": ${currency} ${c.metrics.spend} wasted (${c.metrics.clicks} clicks, ${c.metrics.impressions} impressions)`);
-    }
-    lines.push('');
-  } else {
-    lines.push('No bleeder campaigns detected.');
+    lines.push(`Bleeders (spend, 0 conversions): ${bleeders.map((c: any) => `"${c.name}" ${ccy} ${c.metrics.spend}`).join(', ')}`);
   }
 
   return lines.join('\n');

@@ -12,8 +12,6 @@ import { analystTools, handleAnalystTool } from './tools/analyst.js';
 import { creatorTools, handleCreatorTool } from './tools/creator.js';
 import { debugTools, handleDebugTool } from './tools/debug.js';
 
-// ── All tools ──
-
 const ALL_TOOLS = [
   ...managementTools,
   ...analystTools,
@@ -26,10 +24,8 @@ const analystToolNames = new Set(analystTools.map(t => t.name));
 const creatorToolNames = new Set(creatorTools.map(t => t.name));
 const debugToolNames = new Set(debugTools.map(t => t.name));
 
-// ── Server ──
-
 const server = new Server(
-  { name: 'meta-marketing-mcp', version: '1.0.0' },
+  { name: 'meta-marketing-mcp', version: '1.1.0' },
   { capabilities: { tools: {} } },
 );
 
@@ -53,35 +49,44 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       result = await handleDebugTool(name, args ?? {});
     } else {
       return {
-        content: [{ type: 'text', text: `Unknown tool: ${name}` }],
+        content: [{ type: 'text', text: `Unknown tool "${name}". Available: ${ALL_TOOLS.map(t => t.name).join(', ')}` }],
         isError: true,
       };
     }
 
+    // Compact JSON — no pretty-printing to save tokens
     return {
-      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+      content: [{ type: 'text', text: JSON.stringify(result) }],
     };
   } catch (error: any) {
-    const message = extractErrorMessage(error);
     return {
-      content: [{ type: 'text', text: `Error: ${message}` }],
+      content: [{ type: 'text', text: extractErrorMessage(error) }],
       isError: true,
     };
   }
 });
 
 function extractErrorMessage(error: any): string {
-  // Meta API errors have a nested structure
+  // Meta API errors — extract human-readable message with fix guidance
   if (error?.response?.error) {
     const e = error.response.error;
-    return `[Meta API ${e.code}] ${e.error_user_title ?? e.message ?? 'Unknown error'}${e.error_user_msg ? ': ' + e.error_user_msg : ''}`;
+    const title = e.error_user_title ?? e.message ?? 'Unknown error';
+    const detail = e.error_user_msg ? ` ${e.error_user_msg}` : '';
+    const code = e.code ? ` (code ${e.code})` : '';
+
+    // Add actionable guidance for common errors
+    if (e.code === 190) return `Auth expired${code}. Run "npm run setup" in the meta-mcp-server directory to re-authenticate.`;
+    if (e.code === 100) return `Invalid parameter${code}: ${title}.${detail} Check the parameter values and try again.`;
+    if (e.code === 10) return `Permission denied${code}. The access token may not have the required permissions for this action.`;
+    if (e.code === 17 || e.code === 4) return `Rate limited${code}. The server will auto-retry — try again in a moment.`;
+
+    return `${title}${detail}${code}`;
   }
+
   if (error?.error?.message) return error.error.message;
   if (error?.message) return error.message;
   return String(error);
 }
-
-// ── Bootstrap ──
 
 async function main(): Promise<void> {
   validateConfig();
@@ -91,12 +96,12 @@ async function main(): Promise<void> {
   await server.connect(transport);
 
   if (config.dryRun) {
-    console.error('[meta-mcp] Running in DRY_RUN mode — write operations are simulated');
+    console.error('[meta-mcp] DRY_RUN mode — write operations simulated');
   }
-  console.error('[meta-mcp] Server started successfully');
+  console.error('[meta-mcp] Server started');
 }
 
 main().catch((err) => {
-  console.error('[meta-mcp] Fatal error:', err);
+  console.error('[meta-mcp] Fatal:', err);
   process.exit(1);
 });
