@@ -23,8 +23,11 @@ const SCOPES = [
   'ads_management',
   'ads_read',
   'business_management',
+  'read_insights',
   'pages_read_engagement',
   'pages_manage_ads',
+  'pages_show_list',
+  'catalog_management',
 ].join(',');
 
 const CLAUDE_CONFIG_PATH = path.join(
@@ -60,7 +63,7 @@ async function exchangeForLongLived(shortToken: string): Promise<{ token: string
 }
 
 async function fetchAdAccounts(token: string): Promise<Array<{ id: string; name: string }>> {
-  const url = `https://graph.facebook.com/v19.0/me/adaccounts?fields=account_id,name&access_token=${token}&limit=10`;
+  const url = `https://graph.facebook.com/v19.0/me/adaccounts?fields=account_id,name&access_token=${token}&limit=100`;
   const raw = await httpsGet(url);
   const data = JSON.parse(raw);
   if (data.error) throw new Error(`Failed to fetch ad accounts: ${data.error.message}`);
@@ -128,8 +131,34 @@ async function main(): Promise<void> {
 
           console.log(`Got long-lived token (expires in ${expiryDays} days)`);
 
-          console.log('\nFetching your ad accounts...');
+          console.log('\nFetching your ad accounts (personal + business)...');
           const accounts = await fetchAdAccounts(token);
+
+          // Also try fetching business ad accounts
+          try {
+            const bizUrl = `https://graph.facebook.com/v19.0/me/businesses?fields=id,name&access_token=${token}&limit=50`;
+            const bizRaw = await httpsGet(bizUrl);
+            const bizData = JSON.parse(bizRaw);
+            if (bizData.data?.length) {
+              console.log(`\nFound ${bizData.data.length} Business Manager(s):`);
+              for (const biz of bizData.data) {
+                console.log(`  - ${biz.name} (${biz.id})`);
+                const bizAccUrl = `https://graph.facebook.com/v19.0/${biz.id}/owned_ad_accounts?fields=account_id,name&access_token=${token}&limit=100`;
+                const bizAccRaw = await httpsGet(bizAccUrl);
+                const bizAccData = JSON.parse(bizAccRaw);
+                if (bizAccData.data?.length) {
+                  for (const acc of bizAccData.data) {
+                    const fullId = `act_${acc.account_id}`;
+                    if (!accounts.find((a: any) => a.id === fullId)) {
+                      accounts.push({ id: fullId, name: `${acc.name} [via ${biz.name}]` });
+                    }
+                  }
+                }
+              }
+            }
+          } catch (e: any) {
+            console.log(`Note: Could not fetch business accounts: ${e.message}`);
+          }
 
           let selectedAccount: string;
           if (accounts.length === 0) {
