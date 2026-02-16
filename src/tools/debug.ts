@@ -4,20 +4,19 @@ import { computeMetrics, type RawInsightRow } from '../utils/metrics.js';
 
 export const debugTools = [
   {
-    name: 'debug_ad_setup',
-    description: `Diagnose delivery issues for an ad. Checks for:
-- Ad review status (rejected, in review, approved)
-- Delivery status and effective status
-- "Learning Limited" detection
-- Budget/billing issues
-- Targeting issues
-- Creative issues
+    name: 'meta_debug_ad',
+    description: `Diagnose why an ad is not delivering or underperforming. Use when the user asks "why isn't my ad spending?" or "what's wrong with this ad?". Checks the full hierarchy (ad -> ad set -> campaign) for:
+- Ad review status (rejected/pending/approved) with human-readable rejection reasons
+- Learning phase status (Learning Limited detection)
+- Budget exhaustion at ad set and campaign level
+- Paused parent entities blocking delivery
+- Recent performance red flags (zero impressions, low CTR)
 
-Returns human-readable diagnostic messages, not error codes.`,
+Returns a health score (HEALTHY/NEEDS_ATTENTION/CRITICAL) and actionable fix suggestions.`,
     inputSchema: {
       type: 'object' as const,
       properties: {
-        ad_id: { type: 'string', description: 'The Ad ID to diagnose' },
+        ad_id: { type: 'string', description: 'The Meta Ad ID to diagnose (numeric string)' },
       },
       required: ['ad_id'],
     },
@@ -25,11 +24,11 @@ Returns human-readable diagnostic messages, not error codes.`,
 ];
 
 export async function handleDebugTool(name: string, args: any): Promise<any> {
-  if (name === 'debug_ad_setup') return debugAdSetup(args);
-  throw new Error(`Unknown debug tool: ${name}`);
+  if (name === 'meta_debug_ad') return debugAdSetup(args);
+  throw new Error(`Unknown tool: ${name}`);
 }
 
-interface DiagnosticIssue {
+interface Issue {
   severity: 'error' | 'warning' | 'info';
   category: string;
   message: string;
@@ -37,157 +36,121 @@ interface DiagnosticIssue {
 
 async function debugAdSetup(args: any): Promise<any> {
   const adId = args.ad_id;
-  const issues: DiagnosticIssue[] = [];
+  const issues: Issue[] = [];
 
-  // Fetch ad details
   const ad = await readAd(adId, [
     'id', 'name', 'status', 'effective_status',
     'configured_status', 'ad_review_feedback',
     'issues_info', 'adset_id', 'campaign_id',
-    'created_time',
   ]);
 
   const adEffective = ad.effective_status;
-  const adConfigured = ad.configured_status;
 
-  // Check ad status
+  // Ad review
   if (adEffective === 'DISAPPROVED') {
     const feedback = ad.ad_review_feedback;
     if (feedback?.global) {
       for (const [key, val] of Object.entries(feedback.global)) {
-        issues.push({
-          severity: 'error',
-          category: 'Ad Review',
-          message: `REJECTED: ${humanizeReviewFeedback(key, val as string)}`,
-        });
+        issues.push({ severity: 'error', category: 'Ad Review', message: `REJECTED: ${humanizeReviewFeedback(key, val as string)}` });
       }
     } else {
-      issues.push({ severity: 'error', category: 'Ad Review', message: 'Ad was rejected by Meta review. Check ad content, landing page, and targeting for policy violations.' });
+      issues.push({ severity: 'error', category: 'Ad Review', message: 'Ad rejected. Check content, landing page, and targeting for policy violations.' });
     }
   } else if (adEffective === 'PENDING_REVIEW') {
-    issues.push({ severity: 'info', category: 'Ad Review', message: 'Ad is pending review. This typically takes up to 24 hours.' });
+    issues.push({ severity: 'info', category: 'Ad Review', message: 'Pending review (typically <24 hours).' });
   } else if (adEffective === 'WITH_ISSUES') {
-    issues.push({ severity: 'warning', category: 'Delivery', message: 'Ad has delivery issues. See additional diagnostics below.' });
+    issues.push({ severity: 'warning', category: 'Delivery', message: 'Ad has delivery issues.' });
   }
 
-  // Check issues_info from the API
+  // Platform issues
   if (ad.issues_info?.length) {
     for (const issue of ad.issues_info) {
       issues.push({
         severity: issue.level === 'ERROR' ? 'error' : 'warning',
-        category: 'Platform Issue',
+        category: 'Platform',
         message: issue.error_summary ?? issue.error_message ?? JSON.stringify(issue),
       });
     }
   }
 
-  // Check ad set
-  let adsetInfo: any = null;
+  // Ad set checks
+  let adsetName = '';
   try {
-    adsetInfo = await readAdSet(ad.adset_id, [
+    const adset = await readAdSet(ad.adset_id, [
       'id', 'name', 'status', 'effective_status',
-      'daily_budget', 'lifetime_budget', 'budget_remaining',
-      'optimization_goal', 'bid_strategy', 'learning_stage_info',
+      'daily_budget', 'budget_remaining', 'learning_stage_info',
     ]);
+    adsetName = adset.name;
 
-    // Learning Limited check
-    if (adsetInfo.learning_stage_info) {
-      const stage = adsetInfo.learning_stage_info;
-      if (stage === 'LEARNING_LIMITED' || stage.status === 'LEARNING_LIMITED') {
-        issues.push({
-          severity: 'warning',
-          category: 'Learning Phase',
-          message: 'Ad set is LEARNING LIMITED. It cannot get enough conversions to exit the learning phase. Consider: broadening targeting, increasing budget, or simplifying the conversion event.',
-        });
-      } else if (stage === 'LEARNING' || stage.status === 'LEARNING') {
-        issues.push({
-          severity: 'info',
-          category: 'Learning Phase',
-          message: 'Ad set is in the learning phase. Performance may be unstable. Avoid making edits until ~50 conversions.',
-        });
-      }
+    const stage = adset.learning_stage_info;
+    if (stage === 'LEARNING_LIMITED' || stage?.status === 'LEARNING_LIMITED') {
+      issues.push({ severity: 'warning', category: 'Learning', message: 'LEARNING LIMITED — not enough conversions. Broaden targeting, raise budget, or simplify conversion event.' });
+    } else if (stage === 'LEARNING' || stage?.status === 'LEARNING') {
+      issues.push({ severity: 'info', category: 'Learning', message: 'In learning phase. Avoid edits until ~50 conversions.' });
     }
 
-    // Budget check
-    if (adsetInfo.budget_remaining === '0' || adsetInfo.budget_remaining === 0) {
-      issues.push({ severity: 'error', category: 'Budget', message: 'Ad set has no remaining budget. Increase budget to resume delivery.' });
+    if (adset.budget_remaining === '0' || adset.budget_remaining === 0) {
+      issues.push({ severity: 'error', category: 'Budget', message: 'Ad set budget exhausted.' });
     }
-
-    if (adsetInfo.effective_status === 'PAUSED') {
-      issues.push({ severity: 'warning', category: 'Status', message: 'Ad set is PAUSED. The ad cannot deliver while its ad set is paused.' });
+    if (adset.effective_status === 'PAUSED') {
+      issues.push({ severity: 'warning', category: 'Status', message: 'Ad set is PAUSED — ad cannot deliver.' });
     }
   } catch (e: any) {
-    issues.push({ severity: 'warning', category: 'Ad Set', message: `Could not fetch ad set details: ${e.message}` });
+    issues.push({ severity: 'warning', category: 'Ad Set', message: `Could not fetch ad set: ${e.message}` });
   }
 
-  // Check campaign
-  let campaignInfo: any = null;
+  // Campaign checks
+  let campaignName = '';
   try {
-    campaignInfo = await readCampaign(ad.campaign_id, [
-      'id', 'name', 'status', 'effective_status',
-      'daily_budget', 'lifetime_budget', 'budget_remaining',
-    ]);
+    const campaign = await readCampaign(ad.campaign_id, ['id', 'name', 'status', 'effective_status', 'budget_remaining']);
+    campaignName = campaign.name;
 
-    if (campaignInfo.effective_status === 'PAUSED') {
-      issues.push({ severity: 'warning', category: 'Status', message: 'Campaign is PAUSED. No ads will deliver until the campaign is activated.' });
+    if (campaign.effective_status === 'PAUSED') {
+      issues.push({ severity: 'warning', category: 'Status', message: 'Campaign is PAUSED — no ads deliver.' });
     }
-
-    if (campaignInfo.budget_remaining === '0' || campaignInfo.budget_remaining === 0) {
+    if (campaign.budget_remaining === '0' || campaign.budget_remaining === 0) {
       issues.push({ severity: 'error', category: 'Budget', message: 'Campaign budget exhausted.' });
     }
   } catch (e: any) {
-    issues.push({ severity: 'warning', category: 'Campaign', message: `Could not fetch campaign details: ${e.message}` });
+    issues.push({ severity: 'warning', category: 'Campaign', message: `Could not fetch campaign: ${e.message}` });
   }
 
-  // Check recent performance
+  // Recent performance
   let perfNote: string | null = null;
   try {
     const range = resolveRange('last_3d');
     const insights = await fetchCampaignInsights(ad.campaign_id, { time_range: range });
     if (insights.length) {
       const m = computeMetrics(insights[0] as RawInsightRow);
-      if (m.impressions === 0) {
-        perfNote = 'Zero impressions in last 3 days. Likely a delivery block (review, budget, or targeting).';
-      } else if (m.clicks === 0 && m.impressions > 1000) {
-        perfNote = `${m.impressions} impressions but zero clicks. Creative may need improvement.`;
-      } else if (m.ctr < 0.5) {
-        perfNote = `Very low CTR (${m.ctr}%). Consider testing new creative or refining audience.`;
-      }
+      if (m.impressions === 0) perfNote = 'Zero impressions in 3 days — likely blocked by review, budget, or targeting.';
+      else if (m.clicks === 0 && m.impressions > 1000) perfNote = `${m.impressions} impressions, zero clicks — creative may need work.`;
+      else if (m.ctr < 0.5) perfNote = `CTR is ${m.ctr}% — consider new creative or refined audience.`;
     }
-  } catch {
-    // skip perf check
-  }
+  } catch { /* skip */ }
 
-  // Build diagnosis
-  const healthScore = issues.filter(i => i.severity === 'error').length === 0
-    ? (issues.filter(i => i.severity === 'warning').length === 0 ? 'HEALTHY' : 'NEEDS_ATTENTION')
-    : 'CRITICAL';
+  const errors = issues.filter(i => i.severity === 'error').length;
+  const warnings = issues.filter(i => i.severity === 'warning').length;
+  const health = errors > 0 ? 'CRITICAL' : warnings > 0 ? 'NEEDS_ATTENTION' : 'HEALTHY';
 
   return {
-    ad_id: adId,
-    ad_name: ad.name,
-    effective_status: adEffective,
-    configured_status: adConfigured,
-    health: healthScore,
-    issues: issues.length ? issues : [{ severity: 'info', category: 'Status', message: 'No issues detected. Ad appears healthy.' }],
+    ad: ad.name,
+    status: adEffective,
+    health,
+    issues: issues.length ? issues : [{ severity: 'info', category: 'Status', message: 'No issues detected.' }],
     ...(perfNote && { performance_note: perfNote }),
-    hierarchy: {
-      campaign: campaignInfo ? { id: campaignInfo.id, name: campaignInfo.name, status: campaignInfo.effective_status } : null,
-      adset: adsetInfo ? { id: adsetInfo.id, name: adsetInfo.name, status: adsetInfo.effective_status } : null,
-    },
+    hierarchy: { campaign: campaignName, adset: adsetName },
   };
 }
 
 function humanizeReviewFeedback(key: string, val: string): string {
   const map: Record<string, string> = {
-    'POLICY_VIOLATION': 'Ad violates Meta advertising policies',
-    'PERSONAL_ATTRIBUTES': 'Ad implies personal attributes about the viewer',
-    'MISLEADING_CLAIMS': 'Ad contains misleading or exaggerated claims',
-    'ADULT_CONTENT': 'Ad contains adult or suggestive content',
-    'DISCRIMINATION': 'Ad may be discriminatory',
-    'LANDING_PAGE': 'Landing page does not meet Meta requirements',
-    'LOW_QUALITY': 'Ad creative is low quality or clickbait',
+    POLICY_VIOLATION: 'Violates Meta advertising policies',
+    PERSONAL_ATTRIBUTES: 'Implies personal attributes about viewer',
+    MISLEADING_CLAIMS: 'Contains misleading or exaggerated claims',
+    ADULT_CONTENT: 'Contains adult or suggestive content',
+    DISCRIMINATION: 'May be discriminatory',
+    LANDING_PAGE: 'Landing page does not meet requirements',
+    LOW_QUALITY: 'Creative is low quality or clickbait',
   };
-
   return map[key] ?? `${key}: ${val}`;
 }

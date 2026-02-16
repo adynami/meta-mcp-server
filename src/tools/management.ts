@@ -1,4 +1,3 @@
-import { z } from 'zod';
 import { config } from '../config.js';
 import {
   fetchCampaigns, fetchAdSets, fetchAds,
@@ -9,104 +8,117 @@ import {
 } from '../meta-client.js';
 import { resolveRange, type TimeRangeKey } from '../utils/date-ranges.js';
 import { computeMetrics, type RawInsightRow } from '../utils/metrics.js';
-import {
-  timeRangeSchema, paginationSchema, campaignStatusSchema,
-  type CampaignSummary, type AdSetSummary, type AdSummary, type InsightsSummary,
-} from '../utils/schemas.js';
+import type { CampaignSummary, AdSetSummary, AdSummary, InsightsSummary } from '../utils/schemas.js';
 
 // ── Tool definitions ──
 
 export const managementTools = [
   {
-    name: 'list_campaigns',
-    description: 'List campaigns in the ad account with key fields only. Returns max `limit` results (default 5). Use `status_filter` to filter by delivery status.',
+    name: 'meta_list_campaigns',
+    description: 'List campaigns in the Meta ad account. Returns name, status, objective, and budget for each. Use when the user wants to see what campaigns exist, check statuses, or find a campaign ID. Use status_filter to narrow results (e.g., only ACTIVE). Default limit is 5 to save tokens — increase if the user needs more.',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        limit: { type: 'number', description: 'Max results (1-50, default 5)', default: 5 },
+        limit: { type: 'number', minimum: 1, maximum: 50, description: 'Max campaigns to return (default 5)' },
         status_filter: {
           type: 'array',
           items: { type: 'string', enum: ['ACTIVE', 'PAUSED', 'ARCHIVED'] },
-          description: 'Filter by status (default: all)',
+          description: 'Only return campaigns with these statuses',
         },
-        after: { type: 'string', description: 'Pagination cursor' },
+        after: { type: 'string', description: 'Pagination cursor from a previous response' },
+        response_format: {
+          type: 'string',
+          enum: ['concise', 'detailed'],
+          description: 'concise = name+status only, detailed = all fields (default: detailed)',
+        },
       },
     },
   },
   {
-    name: 'get_campaign_details',
-    description: 'Get detailed info for a single campaign by ID, including its ad sets.',
+    name: 'meta_get_campaign',
+    description: 'Get details for a single campaign by its ID. Use when the user asks about a specific campaign or you need budget/objective/dates for one campaign. Returns budget, objective, bid strategy, and schedule.',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        campaign_id: { type: 'string', description: 'The campaign ID' },
+        campaign_id: { type: 'string', description: 'Meta campaign ID (numeric string, e.g. "23851234567890")' },
       },
       required: ['campaign_id'],
     },
   },
   {
-    name: 'list_adsets',
-    description: 'List ad sets, optionally filtered by campaign ID.',
+    name: 'meta_list_adsets',
+    description: 'List ad sets in the account. Use when the user asks about targeting, budgets at the ad set level, or wants to drill into a campaign. Filter by campaign_id to see ad sets within a specific campaign.',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        campaign_id: { type: 'string', description: 'Filter by campaign ID (optional)' },
-        limit: { type: 'number', default: 5 },
+        campaign_id: { type: 'string', description: 'Only show ad sets in this campaign' },
+        limit: { type: 'number', minimum: 1, maximum: 50, description: 'Max results (default 5)' },
         status_filter: {
           type: 'array',
           items: { type: 'string', enum: ['ACTIVE', 'PAUSED', 'ARCHIVED'] },
+          description: 'Only return ad sets with these statuses',
+        },
+        response_format: {
+          type: 'string',
+          enum: ['concise', 'detailed'],
+          description: 'concise = name+status only (default: detailed)',
         },
       },
     },
   },
   {
-    name: 'list_ads',
-    description: 'List ads, optionally filtered by ad set or campaign.',
+    name: 'meta_list_ads',
+    description: 'List ads in the account. Use when the user wants to see individual ads or needs an ad ID for debugging. Filter by adset_id or campaign_id to narrow results.',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        adset_id: { type: 'string', description: 'Filter by ad set ID' },
-        campaign_id: { type: 'string', description: 'Filter by campaign ID' },
-        limit: { type: 'number', default: 5 },
+        adset_id: { type: 'string', description: 'Only show ads in this ad set' },
+        campaign_id: { type: 'string', description: 'Only show ads in this campaign' },
+        limit: { type: 'number', minimum: 1, maximum: 50, description: 'Max results (default 5)' },
       },
     },
   },
   {
-    name: 'get_insights',
-    description: 'Get performance metrics for the account or a specific campaign. All metrics (CTR, CPC, ROAS, CPA) are pre-calculated.',
+    name: 'meta_get_insights',
+    description: 'Get performance metrics for the account or a specific campaign. All key metrics are pre-calculated server-side: CTR, CPC, CPM, CPA, ROAS. Use when the user asks about performance, spend, or ROI. Set level to "campaign" to see per-campaign breakdown sorted by spend.',
     inputSchema: {
       type: 'object' as const,
       properties: {
         time_range: {
           type: 'string',
           enum: ['today', 'yesterday', 'last_3d', 'last_7d', 'last_14d', 'last_30d', 'last_90d', 'this_month', 'last_month'],
-          description: 'Predefined time range (default: last_7d)',
+          description: 'Time period to analyze (default: last_7d)',
         },
-        campaign_id: { type: 'string', description: 'Get insights for specific campaign (optional)' },
+        campaign_id: { type: 'string', description: 'Restrict insights to this campaign' },
         level: {
           type: 'string',
           enum: ['account', 'campaign', 'adset', 'ad'],
-          description: 'Breakdown level (default: account)',
+          description: 'Aggregation level (default: account). Use "campaign" for per-campaign breakdown.',
         },
-        limit: { type: 'number', default: 5, description: 'Max rows when level != account' },
+        limit: { type: 'number', minimum: 1, maximum: 25, description: 'Max rows for non-account levels (default 5)' },
+        response_format: {
+          type: 'string',
+          enum: ['concise', 'detailed'],
+          description: 'concise = spend/conversions/roas only, detailed = all metrics (default: detailed)',
+        },
       },
     },
   },
   {
-    name: 'update_campaign_status',
-    description: 'Pause, activate, or archive a campaign.',
+    name: 'meta_update_campaign_status',
+    description: 'Change a campaign status to ACTIVE, PAUSED, or ARCHIVED. Use when the user wants to pause, resume, or archive a campaign. This is a write operation — confirm with the user before calling.',
     inputSchema: {
       type: 'object' as const,
       properties: {
         campaign_id: { type: 'string', description: 'Campaign ID to update' },
-        status: { type: 'string', enum: ['ACTIVE', 'PAUSED', 'ARCHIVED'], description: 'New status' },
+        status: { type: 'string', enum: ['ACTIVE', 'PAUSED', 'ARCHIVED'], description: 'Target status' },
       },
       required: ['campaign_id', 'status'],
     },
   },
   {
-    name: 'get_account_info',
-    description: 'Get ad account metadata: name, currency, timezone, status.',
+    name: 'meta_get_account',
+    description: 'Get ad account metadata: name, currency, timezone, and account status. Use when you need to know the currency for displaying budgets or to verify the connected account.',
     inputSchema: { type: 'object' as const, properties: {} },
   },
 ];
@@ -115,27 +127,20 @@ export const managementTools = [
 
 export async function handleManagementTool(name: string, args: any): Promise<any> {
   switch (name) {
-    case 'list_campaigns':
-      return listCampaigns(args);
-    case 'get_campaign_details':
-      return getCampaignDetails(args);
-    case 'list_adsets':
-      return listAdSets(args);
-    case 'list_ads':
-      return listAds(args);
-    case 'get_insights':
-      return getInsights(args);
-    case 'update_campaign_status':
-      return updateStatus(args);
-    case 'get_account_info':
-      return getAccountContext();
-    default:
-      throw new Error(`Unknown management tool: ${name}`);
+    case 'meta_list_campaigns': return listCampaigns(args);
+    case 'meta_get_campaign': return getCampaignDetails(args);
+    case 'meta_list_adsets': return listAdSets(args);
+    case 'meta_list_ads': return listAds(args);
+    case 'meta_get_insights': return getInsights(args);
+    case 'meta_update_campaign_status': return updateStatus(args);
+    case 'meta_get_account': return getAccountContext();
+    default: throw new Error(`Unknown tool: ${name}`);
   }
 }
 
-async function listCampaigns(args: any): Promise<{ campaigns: CampaignSummary[]; has_more: boolean }> {
+async function listCampaigns(args: any): Promise<any> {
   const limit = args.limit ?? 5;
+  const concise = args.response_format === 'concise';
   const params: Record<string, any> = { limit: limit + 1 };
 
   if (args.status_filter?.length) {
@@ -147,6 +152,13 @@ async function listCampaigns(args: any): Promise<{ campaigns: CampaignSummary[];
   const raw = await fetchCampaigns(fields, params);
   const hasMore = raw.length > limit;
   const items = raw.slice(0, limit);
+
+  if (concise) {
+    return {
+      campaigns: items.map((c: any) => ({ id: c.id, name: c.name, status: c.effective_status ?? c.status })),
+      has_more: hasMore,
+    };
+  }
 
   return {
     campaigns: items.map((c: any) => ({
@@ -164,25 +176,26 @@ async function listCampaigns(args: any): Promise<{ campaigns: CampaignSummary[];
 
 async function getCampaignDetails(args: any): Promise<any> {
   const fields = ['id', 'name', 'status', 'objective', 'daily_budget', 'lifetime_budget', 'buying_type', 'bid_strategy', 'created_time', 'start_time', 'stop_time'];
-  const campaign = await readCampaign(args.campaign_id, fields);
+  const c = await readCampaign(args.campaign_id, fields);
 
   return {
-    id: campaign.id,
-    name: campaign.name,
-    status: campaign.status,
-    objective: campaign.objective,
-    daily_budget: campaign.daily_budget ? `${(parseInt(campaign.daily_budget) / 100).toFixed(2)}` : null,
-    lifetime_budget: campaign.lifetime_budget ? `${(parseInt(campaign.lifetime_budget) / 100).toFixed(2)}` : null,
-    buying_type: campaign.buying_type,
-    bid_strategy: campaign.bid_strategy,
-    created: campaign.created_time,
-    start_time: campaign.start_time,
-    stop_time: campaign.stop_time,
+    id: c.id,
+    name: c.name,
+    status: c.status,
+    objective: c.objective,
+    daily_budget: c.daily_budget ? `${(parseInt(c.daily_budget) / 100).toFixed(2)}` : null,
+    lifetime_budget: c.lifetime_budget ? `${(parseInt(c.lifetime_budget) / 100).toFixed(2)}` : null,
+    buying_type: c.buying_type,
+    bid_strategy: c.bid_strategy,
+    created: c.created_time,
+    start_time: c.start_time,
+    stop_time: c.stop_time,
   };
 }
 
-async function listAdSets(args: any): Promise<{ adsets: AdSetSummary[] }> {
+async function listAdSets(args: any): Promise<any> {
   const limit = args.limit ?? 5;
+  const concise = args.response_format === 'concise';
   const params: Record<string, any> = { limit };
   if (args.campaign_id) {
     params.filtering = [{ field: 'campaign_id', operator: 'EQUAL', value: args.campaign_id }];
@@ -196,6 +209,10 @@ async function listAdSets(args: any): Promise<{ adsets: AdSetSummary[] }> {
 
   const fields = ['id', 'name', 'status', 'daily_budget', 'lifetime_budget', 'bid_strategy', 'optimization_goal', 'targeting'];
   const raw = await fetchAdSets(fields, params);
+
+  if (concise) {
+    return { adsets: raw.slice(0, limit).map((s: any) => ({ id: s.id, name: s.name, status: s.effective_status ?? s.status })) };
+  }
 
   return {
     adsets: raw.slice(0, limit).map((s: any) => ({
@@ -214,16 +231,16 @@ async function listAdSets(args: any): Promise<{ adsets: AdSetSummary[] }> {
 function summarizeTargeting(t: any): string {
   if (!t) return 'No targeting data';
   const parts: string[] = [];
-  if (t.age_min || t.age_max) parts.push(`Age: ${t.age_min ?? '?'}-${t.age_max ?? '?'}`);
-  if (t.geo_locations?.countries) parts.push(`Geo: ${t.geo_locations.countries.join(', ')}`);
+  if (t.age_min || t.age_max) parts.push(`Age ${t.age_min ?? '?'}-${t.age_max ?? '?'}`);
+  if (t.geo_locations?.countries) parts.push(t.geo_locations.countries.join(', '));
   if (t.genders?.length) {
     const g = t.genders.map((n: number) => n === 1 ? 'M' : n === 2 ? 'F' : 'All');
-    parts.push(`Gender: ${g.join(', ')}`);
+    parts.push(g.join('/'));
   }
-  return parts.join(' | ') || 'Broad targeting';
+  return parts.join(' | ') || 'Broad';
 }
 
-async function listAds(args: any): Promise<{ ads: AdSummary[] }> {
+async function listAds(args: any): Promise<any> {
   const limit = args.limit ?? 5;
   const params: Record<string, any> = { limit };
   const filtering: any[] = [];
@@ -231,7 +248,7 @@ async function listAds(args: any): Promise<{ ads: AdSummary[] }> {
   if (args.campaign_id) filtering.push({ field: 'campaign_id', operator: 'EQUAL', value: args.campaign_id });
   if (filtering.length) params.filtering = filtering;
 
-  const fields = ['id', 'name', 'status', 'creative'];
+  const fields = ['id', 'name', 'status'];
   const raw = await fetchAds(fields, params);
 
   return {
@@ -239,22 +256,18 @@ async function listAds(args: any): Promise<{ ads: AdSummary[] }> {
       id: a.id,
       name: a.name,
       status: a.effective_status ?? a.status,
-      creative_id: a.creative?.id ?? null,
-      preview_url: null,
     })),
   };
 }
 
-async function getInsights(args: any): Promise<InsightsSummary | InsightsSummary[]> {
+async function getInsights(args: any): Promise<any> {
   const rangeKey = (args.time_range ?? 'last_7d') as TimeRangeKey;
   const range = resolveRange(rangeKey);
   const level = args.level ?? 'account';
   const limit = args.limit ?? 5;
+  const concise = args.response_format === 'concise';
 
-  const params: Record<string, any> = {
-    time_range: range,
-    level,
-  };
+  const params: Record<string, any> = { time_range: range, level };
 
   if (level !== 'account') {
     params.limit = limit;
@@ -269,27 +282,35 @@ async function getInsights(args: any): Promise<InsightsSummary | InsightsSummary
   }
 
   if (!raw.length) {
-    return { entity_id: config.adAccountId, entity_name: 'Account', date_range: `${range.since} to ${range.until}`, impressions: 0, clicks: 0, spend: 0, ctr: 0, cpc: 0, cpm: 0, conversions: 0, conversion_value: 0, roas: 0, cpa: 0, frequency: 0, reach: 0 };
+    return concise
+      ? { spend: 0, conversions: 0, roas: 0 }
+      : { entity: 'Account', period: `${range.since} to ${range.until}`, spend: 0, impressions: 0, clicks: 0, ctr: 0, cpc: 0, cpm: 0, conversions: 0, roas: 0, cpa: 0 };
   }
 
-  const results: InsightsSummary[] = raw.slice(0, level === 'account' ? 1 : limit).map((row: any) => {
+  const mapRow = (row: any) => {
     const m = computeMetrics(row as RawInsightRow);
+    const name = row.campaign_name ?? row.adset_name ?? row.ad_name ?? 'Account';
+    if (concise) {
+      return { name, spend: m.spend, conversions: m.conversions, roas: m.roas, cpa: m.cpa };
+    }
     return {
-      entity_id: row.campaign_id ?? row.adset_id ?? row.ad_id ?? config.adAccountId,
-      entity_name: row.campaign_name ?? row.adset_name ?? row.ad_name ?? 'Account',
-      date_range: `${row.date_start} to ${row.date_stop}`,
-      ...m,
+      name,
+      period: `${row.date_start} to ${row.date_stop}`,
+      spend: m.spend, impressions: m.impressions, clicks: m.clicks,
+      ctr: m.ctr, cpc: m.cpc, cpm: m.cpm,
+      conversions: m.conversions, conversion_value: m.conversion_value,
+      roas: m.roas, cpa: m.cpa, frequency: m.frequency, reach: m.reach,
     };
-  });
+  };
 
-  return level === 'account' ? results[0] : results;
+  if (level === 'account') return mapRow(raw[0]);
+  return raw.slice(0, limit).map(mapRow);
 }
 
 async function updateStatus(args: any): Promise<any> {
   if (config.dryRun) {
-    return { dry_run: true, message: `Simulated success: Campaign ${args.campaign_id} -> ${args.status}` };
+    return { dry_run: true, message: `Simulated: Campaign ${args.campaign_id} -> ${args.status}` };
   }
-
   await apiUpdateStatus(args.campaign_id, args.status);
   return { success: true, campaign_id: args.campaign_id, new_status: args.status };
 }
