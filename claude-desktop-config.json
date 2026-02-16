@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "meta-marketing": {
+      "command": "node",
+      "args": ["/Users/aaron/meta-mcp-server/dist/index.js"],
+      "env": {
+        "META_ACCESS_TOKEN": "YOUR_LONG_LIVED_ACCESS_TOKEN",
+        "META_AD_ACCOUNT_ID": "act_YOUR_ACCOUNT_ID",
+        "META_APP_ID": "691127188799372",
+        "META_APP_SECRET": "29f21e2dfb5dd4c91b41634f51b1c8af",
+        "META_API_VERSION": "v19.0",
+        "DRY_RUN": "false"
+      }
+    }
+  }
+}

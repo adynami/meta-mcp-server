@@ -1,0 +1,24 @@
+{
+  "name": "meta-mcp-server",
+  "version": "1.0.0",
+  "description": "Best-in-class MCP server for Meta Marketing API",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "setup": "tsx scripts/get-token.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "facebook-nodejs-business-sdk": "^22.0.3",
+    "zod": "^3.24.2",
+    "sharp": "^0.33.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}
