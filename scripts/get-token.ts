@@ -47,7 +47,7 @@ function httpsGet(url: string): Promise<string> {
 }
 
 async function exchangeCodeForToken(code: string): Promise<string> {
-  const url = `https://graph.facebook.com/v19.0/oauth/access_token?client_id=${APP_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&client_secret=${APP_SECRET}&code=${code}`;
+  const url = `https://graph.facebook.com/v22.0/oauth/access_token?client_id=${APP_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&client_secret=${APP_SECRET}&code=${code}`;
   const raw = await httpsGet(url);
   const data = JSON.parse(raw);
   if (data.error) throw new Error(`Token exchange failed: ${data.error.message}`);
@@ -55,7 +55,7 @@ async function exchangeCodeForToken(code: string): Promise<string> {
 }
 
 async function exchangeForLongLived(shortToken: string): Promise<{ token: string; expires_in: number }> {
-  const url = `https://graph.facebook.com/v19.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${APP_ID}&client_secret=${APP_SECRET}&fb_exchange_token=${shortToken}`;
+  const url = `https://graph.facebook.com/v22.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${APP_ID}&client_secret=${APP_SECRET}&fb_exchange_token=${shortToken}`;
   const raw = await httpsGet(url);
   const data = JSON.parse(raw);
   if (data.error) throw new Error(`Long-lived exchange failed: ${data.error.message}`);
@@ -63,7 +63,7 @@ async function exchangeForLongLived(shortToken: string): Promise<{ token: string
 }
 
 async function fetchAdAccounts(token: string): Promise<Array<{ id: string; name: string }>> {
-  const url = `https://graph.facebook.com/v19.0/me/adaccounts?fields=account_id,name&access_token=${token}&limit=100`;
+  const url = `https://graph.facebook.com/v22.0/me/adaccounts?fields=account_id,name&access_token=${token}&limit=100`;
   const raw = await httpsGet(url);
   const data = JSON.parse(raw);
   if (data.error) throw new Error(`Failed to fetch ad accounts: ${data.error.message}`);
@@ -85,7 +85,7 @@ function writeClaudeConfig(token: string, adAccountId: string): void {
       META_AD_ACCOUNT_ID: adAccountId,
       META_APP_ID: APP_ID,
       META_APP_SECRET: APP_SECRET,
-      META_API_VERSION: 'v19.0',
+      META_API_VERSION: 'v22.0',
       DRY_RUN: 'false',
     },
   };
@@ -136,14 +136,14 @@ async function main(): Promise<void> {
 
           // Also try fetching business ad accounts
           try {
-            const bizUrl = `https://graph.facebook.com/v19.0/me/businesses?fields=id,name&access_token=${token}&limit=50`;
+            const bizUrl = `https://graph.facebook.com/v22.0/me/businesses?fields=id,name&access_token=${token}&limit=50`;
             const bizRaw = await httpsGet(bizUrl);
             const bizData = JSON.parse(bizRaw);
             if (bizData.data?.length) {
               console.log(`\nFound ${bizData.data.length} Business Manager(s):`);
               for (const biz of bizData.data) {
                 console.log(`  - ${biz.name} (${biz.id})`);
-                const bizAccUrl = `https://graph.facebook.com/v19.0/${biz.id}/owned_ad_accounts?fields=account_id,name&access_token=${token}&limit=100`;
+                const bizAccUrl = `https://graph.facebook.com/v22.0/${biz.id}/owned_ad_accounts?fields=account_id,name&access_token=${token}&limit=100`;
                 const bizAccRaw = await httpsGet(bizAccUrl);
                 const bizAccData = JSON.parse(bizAccRaw);
                 if (bizAccData.data?.length) {
@@ -209,7 +209,7 @@ async function main(): Promise<void> {
     });
 
     server.listen(9876, () => {
-      const authUrl = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${APP_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${SCOPES}&response_type=code`;
+      const authUrl = `https://www.facebook.com/v22.0/dialog/oauth?client_id=${APP_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${SCOPES}&response_type=code`;
 
       console.log('Opening browser for Facebook login...\n');
       console.log(`If the browser doesn't open, visit:\n${authUrl}\n`);
