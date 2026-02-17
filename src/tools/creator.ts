@@ -63,6 +63,7 @@ export const creatorTools = [
           },
           required: ['headline', 'body', 'link_url'],
         },
+        pixel_id: { type: 'string', description: 'Meta Pixel ID for conversion tracking. Required for OUTCOME_SALES and OUTCOME_LEADS. Default: 858047089973360' },
         start_immediately: { type: 'boolean', description: 'true = ACTIVE, false = PAUSED (default: true)' },
       },
       required: ['campaign_name', 'objective', 'daily_budget', 'targeting', 'image_hash', 'page_id', 'ad_copy'],
@@ -145,7 +146,7 @@ async function handleDeploy(args: any): Promise<any> {
       geo_locations: { countries: args.targeting.geo_locations?.countries ?? ['US'], location_types: ['home', 'recent'] },
     };
 
-    const adsetResult = await createAdSet({
+    const adsetParams: Record<string, any> = {
       campaign_id: campaignId,
       name: `${args.campaign_name} - Ad Set`,
       daily_budget: budgetCents.toString(),
@@ -154,7 +155,22 @@ async function handleDeploy(args: any): Promise<any> {
       bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
       targeting,
       status,
-    });
+    };
+
+    // OUTCOME_SALES requires a pixel + conversion event on the ad set
+    if (args.objective === 'OUTCOME_SALES') {
+      adsetParams.promoted_object = {
+        pixel_id: args.pixel_id ?? '858047089973360',
+        custom_event_type: 'PURCHASE',
+      };
+    } else if (args.objective === 'OUTCOME_LEADS') {
+      adsetParams.promoted_object = {
+        pixel_id: args.pixel_id ?? '858047089973360',
+        custom_event_type: 'LEAD',
+      };
+    }
+
+    const adsetResult = await createAdSet(adsetParams);
     adsetId = adsetResult.id;
     steps.push(`Ad Set ${adsetId}`);
 
@@ -189,9 +205,22 @@ async function handleDeploy(args: any): Promise<any> {
     if (adsetId) { try { await deleteAdSet(adsetId); } catch (e: any) { rollbackErrors.push(e.message); } }
     if (campaignId) { try { await deleteCampaign(campaignId); } catch (e: any) { rollbackErrors.push(e.message); } }
 
+    // Extract the full Meta API error, not just the generic message
+    let errorDetail = error.message ?? String(error);
+    if (error?.response?.error) {
+      const e = error.response.error;
+      errorDetail = `[Meta API ${e.code}] ${e.error_user_title ?? e.message ?? 'Unknown'}`;
+      if (e.error_user_msg) errorDetail += `: ${e.error_user_msg}`;
+      if (e.error_subcode) errorDetail += ` (subcode ${e.error_subcode})`;
+    } else if (error?.response?.data?.error) {
+      const e = error.response.data.error;
+      errorDetail = `[Meta API ${e.code}] ${e.message}`;
+      if (e.error_user_msg) errorDetail += `: ${e.error_user_msg}`;
+    }
+
     return {
       success: false,
-      error: error.message ?? String(error),
+      error: errorDetail,
       failed_at: steps.length === 0 ? 'campaign' : steps.length === 1 ? 'adset' : 'ad',
       rolled_back: rollbackErrors.length === 0,
       ...(rollbackErrors.length && { rollback_errors: rollbackErrors }),
