@@ -117,13 +117,8 @@ async function handleUpload(args: any): Promise<any> {
     return { dry_run: true, message: `Simulated upload: ${path.basename(filePath)} (${(stat.size / 1024).toFixed(0)}KB)`, ...(dimensionWarning && { warning: dimensionWarning }) };
   }
 
-  const result = await uploadAdImage({ filename: filePath });
-  const images = result?._data?.images ?? result?.images;
-  if (images) {
-    const img = images[Object.keys(images)[0]];
-    return { image_hash: img.hash, ...(dimensionWarning && { warning: dimensionWarning }) };
-  }
-  return { image_hash: result?.hash ?? 'unknown' };
+  const result = await uploadAdImage(filePath);
+  return { image_hash: result.hash, ...(dimensionWarning && { warning: dimensionWarning }) };
 }
 
 async function handleDeploy(args: any): Promise<any> {

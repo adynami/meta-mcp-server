@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import bizSdk from 'facebook-nodejs-business-sdk';
 import { config } from './config.js';
 import { rateLimitedCall } from './utils/rate-limiter.js';
@@ -120,9 +122,72 @@ export async function createAd(params: Record<string, any>): Promise<any> {
   return rateLimitedCall(() => account.createAd([], params));
 }
 
-export async function uploadAdImage(params: Record<string, any>): Promise<any> {
-  const account = getAdAccount();
-  return rateLimitedCall(() => account.createAdImage([], params));
+export async function uploadAdImage(filePath: string): Promise<{ hash: string; url?: string }> {
+  // Bypass the FB SDK's broken createAdImage — it doesn't handle file uploads correctly.
+  // Use the Graph API directly with multipart/form-data.
+  return rateLimitedCall(async () => {
+    const fileBuffer = fs.readFileSync(filePath);
+    const fileName = path.basename(filePath);
+
+    // Detect actual MIME type from file magic bytes, not extension
+    const mime = detectMime(fileBuffer);
+
+    const boundary = `----MetaMCP${Date.now()}`;
+    const parts: Buffer[] = [];
+
+    // File part
+    parts.push(Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="filename"; filename="${fileName}"\r\nContent-Type: ${mime}\r\n\r\n`
+    ));
+    parts.push(fileBuffer);
+    parts.push(Buffer.from('\r\n'));
+
+    // Access token part
+    parts.push(Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="access_token"\r\n\r\n${config.accessToken}\r\n`
+    ));
+
+    parts.push(Buffer.from(`--${boundary}--\r\n`));
+
+    const body = Buffer.concat(parts);
+
+    const url = `https://graph.facebook.com/${config.apiVersion}/${config.adAccountId}/adimages`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Content-Length': body.length.toString(),
+      },
+      body,
+    });
+
+    const data = await response.json() as any;
+
+    if (!response.ok || data.error) {
+      const errMsg = data.error?.error_user_msg ?? data.error?.message ?? `HTTP ${response.status}`;
+      throw new Error(errMsg);
+    }
+
+    // Response format: { images: { "filename.png": { hash: "...", url: "..." } } }
+    if (data.images) {
+      const key = Object.keys(data.images)[0];
+      const img = data.images[key];
+      return { hash: img.hash, url: img.url };
+    }
+
+    throw new Error('Unexpected response: no images in API response');
+  });
+}
+
+function detectMime(buf: Buffer): string {
+  // Check magic bytes
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'image/png';
+  if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'image/jpeg';
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return 'image/gif';
+  if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46) return 'image/webp';
+  if (buf[0] === 0x42 && buf[1] === 0x4D) return 'image/bmp';
+  // Fallback to PNG
+  return 'image/png';
 }
 
 export async function deleteCampaign(id: string): Promise<void> {
