@@ -108,18 +108,90 @@ export async function fetchInsightsBreakdown(
 // ── Mutators ──
 
 export async function createCampaign(params: Record<string, any>): Promise<any> {
-  const account = getAdAccount();
-  return rateLimitedCall(() => account.createCampaign([], params));
+  // Bypass FB SDK for all write operations — the SDK's createEdge
+  // silently drops or mangles nested objects during serialization.
+  return rateLimitedCall(async () => {
+    const url = `https://graph.facebook.com/${config.apiVersion}/${config.adAccountId}/campaigns`;
+
+    const formBody = new URLSearchParams();
+    formBody.append('access_token', config.accessToken);
+    for (const [key, value] of Object.entries(params)) {
+      formBody.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formBody.toString(),
+    });
+
+    const data = await response.json() as any;
+    if (!response.ok || data.error) {
+      const e = data.error ?? {};
+      const err = new Error(e.message ?? `HTTP ${response.status}`) as any;
+      err.response = { error: e };
+      throw err;
+    }
+    return data;
+  });
 }
 
 export async function createAdSet(params: Record<string, any>): Promise<any> {
-  const account = getAdAccount();
-  return rateLimitedCall(() => account.createAdSet([], params));
+  // Bypass FB SDK — it can mangle nested objects like promoted_object and targeting.
+  return rateLimitedCall(async () => {
+    const url = `https://graph.facebook.com/${config.apiVersion}/${config.adAccountId}/adsets`;
+
+    const formBody = new URLSearchParams();
+    formBody.append('access_token', config.accessToken);
+    for (const [key, value] of Object.entries(params)) {
+      formBody.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formBody.toString(),
+    });
+
+    const data = await response.json() as any;
+    if (!response.ok || data.error) {
+      const e = data.error ?? {};
+      const err = new Error(e.message ?? `HTTP ${response.status}`) as any;
+      err.response = { error: e };
+      throw err;
+    }
+    return data;
+  });
 }
 
 export async function createAd(params: Record<string, any>): Promise<any> {
-  const account = getAdAccount();
-  return rateLimitedCall(() => account.createAd([], params));
+  // Bypass FB SDK — it strips nested objects like creative.object_story_spec
+  // during serialization, sending only top-level scalar fields.
+  return rateLimitedCall(async () => {
+    const url = `https://graph.facebook.com/${config.apiVersion}/${config.adAccountId}/ads`;
+
+    // The Graph API needs nested objects JSON-stringified as form params
+    const formBody = new URLSearchParams();
+    formBody.append('access_token', config.accessToken);
+    for (const [key, value] of Object.entries(params)) {
+      formBody.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formBody.toString(),
+    });
+
+    const data = await response.json() as any;
+    if (!response.ok || data.error) {
+      const e = data.error ?? {};
+      const err = new Error(e.message ?? `HTTP ${response.status}`) as any;
+      err.response = { error: e };
+      throw err;
+    }
+    return data;
+  });
 }
 
 export async function uploadAdImage(filePath: string): Promise<{ hash: string; url?: string }> {
