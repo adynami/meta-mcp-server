@@ -4,7 +4,7 @@ import {
   fetchAccountInsights, fetchCampaignInsights,
   updateCampaignStatus as apiUpdateStatus,
   readCampaign, readAdSet, readAd as apiReadAd,
-  getAccountContext,
+  getAccountContext, createAd,
 } from '../meta-client.js';
 import { resolveRange, type TimeRangeKey } from '../utils/date-ranges.js';
 import { computeMetrics, type RawInsightRow } from '../utils/metrics.js';
@@ -121,6 +121,33 @@ export const managementTools = [
     description: 'Get ad account metadata: name, currency, timezone, and account status. Use when you need to know the currency for displaying budgets or to verify the connected account.',
     inputSchema: { type: 'object' as const, properties: {} },
   },
+  {
+    name: 'meta_add_ad',
+    description: `Create a new ad inside an existing ad set. Use when adding additional ad variations (different images/copy) to an ad set that already exists — e.g., A/B testing creatives within one ad set. Requires an image_hash from meta_upload_image. For creating a full campaign from scratch, use meta_deploy_campaign instead.`,
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        adset_id: { type: 'string', description: 'Existing ad set ID to add the ad to' },
+        ad_name: { type: 'string', description: 'Display name for the ad' },
+        image_hash: { type: 'string', description: 'Image hash from meta_upload_image' },
+        page_id: { type: 'string', description: 'Facebook Page ID to run the ad from' },
+        headline: { type: 'string', description: 'Ad headline (shown below image)' },
+        body: { type: 'string', description: 'Primary text (shown above image)' },
+        link_url: { type: 'string', description: 'Destination URL when ad is clicked' },
+        call_to_action: {
+          type: 'string',
+          enum: ['LEARN_MORE', 'SHOP_NOW', 'SIGN_UP', 'BOOK_TRAVEL', 'CONTACT_US', 'DOWNLOAD', 'GET_OFFER', 'GET_QUOTE', 'SUBSCRIBE', 'APPLY_NOW'],
+          description: 'CTA button text (default: LEARN_MORE)',
+        },
+        status: {
+          type: 'string',
+          enum: ['ACTIVE', 'PAUSED'],
+          description: 'Ad status (default: PAUSED)',
+        },
+      },
+      required: ['adset_id', 'ad_name', 'image_hash', 'page_id', 'headline', 'body', 'link_url'],
+    },
+  },
 ];
 
 // ── Handlers ──
@@ -134,6 +161,7 @@ export async function handleManagementTool(name: string, args: any): Promise<any
     case 'meta_get_insights': return getInsights(args);
     case 'meta_update_campaign_status': return updateStatus(args);
     case 'meta_get_account': return getAccountContext();
+    case 'meta_add_ad': return addAd(args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
 }
@@ -313,4 +341,50 @@ async function updateStatus(args: any): Promise<any> {
   }
   await apiUpdateStatus(args.campaign_id, args.status);
   return { success: true, campaign_id: args.campaign_id, new_status: args.status };
+}
+
+async function addAd(args: any): Promise<any> {
+  if (config.dryRun) {
+    return { dry_run: true, message: `Simulated: Ad "${args.ad_name}" in adset ${args.adset_id}` };
+  }
+
+  try {
+    const result = await createAd({
+      name: args.ad_name,
+      status: args.status ?? 'PAUSED',
+      adset_id: args.adset_id,
+      creative: {
+        object_story_spec: {
+          page_id: args.page_id,
+          link_data: {
+            image_hash: args.image_hash,
+            link: args.link_url,
+            message: args.body,
+            name: args.headline,
+            call_to_action: { type: args.call_to_action ?? 'LEARN_MORE' },
+          },
+        },
+      },
+    });
+
+    return { success: true, ad_id: result.id, ad_name: args.ad_name, adset_id: args.adset_id, status: args.status ?? 'PAUSED' };
+  } catch (error: any) {
+    const fbErr =
+      error?.response?.error ??
+      error?.response?.data?.error ??
+      error?.body?.error ??
+      error?.error ??
+      null;
+
+    let errorDetail: string;
+    if (fbErr) {
+      errorDetail = `[Meta API ${fbErr.code ?? '?'}] ${fbErr.error_user_title ?? fbErr.message ?? 'Unknown'}`;
+      if (fbErr.error_user_msg) errorDetail += ` — ${fbErr.error_user_msg}`;
+      if (fbErr.error_subcode) errorDetail += ` (subcode ${fbErr.error_subcode})`;
+    } else {
+      errorDetail = error?.message ?? String(error);
+    }
+
+    return { success: false, error: errorDetail };
+  }
 }
