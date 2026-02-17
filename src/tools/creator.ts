@@ -205,22 +205,41 @@ async function handleDeploy(args: any): Promise<any> {
     if (adsetId) { try { await deleteAdSet(adsetId); } catch (e: any) { rollbackErrors.push(e.message); } }
     if (campaignId) { try { await deleteCampaign(campaignId); } catch (e: any) { rollbackErrors.push(e.message); } }
 
-    // Extract the full Meta API error, not just the generic message
-    let errorDetail = error.message ?? String(error);
-    if (error?.response?.error) {
-      const e = error.response.error;
-      errorDetail = `[Meta API ${e.code}] ${e.error_user_title ?? e.message ?? 'Unknown'}`;
-      if (e.error_user_msg) errorDetail += `: ${e.error_user_msg}`;
-      if (e.error_subcode) errorDetail += ` (subcode ${e.error_subcode})`;
-    } else if (error?.response?.data?.error) {
-      const e = error.response.data.error;
-      errorDetail = `[Meta API ${e.code}] ${e.message}`;
-      if (e.error_user_msg) errorDetail += `: ${e.error_user_msg}`;
+    // Dump full error to stderr for debugging
+    console.error('[meta-mcp] deploy_campaign error at step:', steps.length === 0 ? 'campaign' : steps.length === 1 ? 'adset' : 'ad');
+    console.error('[meta-mcp] error.message:', error?.message);
+    console.error('[meta-mcp] error.response:', JSON.stringify(error?.response, null, 2));
+    console.error('[meta-mcp] error.response?.data:', JSON.stringify(error?.response?.data, null, 2));
+    console.error('[meta-mcp] error.body:', JSON.stringify(error?.body, null, 2));
+    console.error('[meta-mcp] error.data:', JSON.stringify(error?.data, null, 2));
+    // FB SDK sometimes puts the error in different places
+    const rawError = JSON.stringify(error, Object.getOwnPropertyNames(error ?? {}), 2);
+    console.error('[meta-mcp] full error object:', rawError);
+
+    // Try every known path the FB SDK uses to store API errors
+    const fbErr =
+      error?.response?.error ??         // SDK v22+
+      error?.response?.data?.error ??   // axios wrapper
+      error?.body?.error ??             // older SDK
+      error?.data?.error ??             // direct response
+      error?.error ??                   // nested
+      null;
+
+    let errorDetail: string;
+    if (fbErr) {
+      errorDetail = `[Meta API ${fbErr.code ?? '?'}] ${fbErr.error_user_title ?? fbErr.message ?? 'Unknown'}`;
+      if (fbErr.error_user_msg) errorDetail += ` — ${fbErr.error_user_msg}`;
+      if (fbErr.error_subcode) errorDetail += ` (subcode ${fbErr.error_subcode})`;
+      if (fbErr.fbtrace_id) errorDetail += ` [trace: ${fbErr.fbtrace_id}]`;
+    } else {
+      // Last resort: include the full serialized error so nothing is hidden
+      errorDetail = error?.message ?? rawError ?? String(error);
     }
 
     return {
       success: false,
       error: errorDetail,
+      error_raw: rawError?.slice(0, 2000),  // include raw for debugging, capped at 2k chars
       failed_at: steps.length === 0 ? 'campaign' : steps.length === 1 ? 'adset' : 'ad',
       rolled_back: rollbackErrors.length === 0,
       ...(rollbackErrors.length && { rollback_errors: rollbackErrors }),
