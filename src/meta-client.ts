@@ -528,6 +528,110 @@ export async function searchTargeting(type: 'interest' | 'behavior', query: stri
   });
 }
 
+// ── Async Insights ──
+
+/**
+ * Start an async insights job. Returns the report_run_id.
+ * Use pollInsightsReport() to wait for completion, then fetchInsightsReport() to get data.
+ */
+export async function startAsyncInsights(params: Record<string, any>): Promise<string> {
+  return rateLimitedCall(async () => {
+    const { campaign_id, breakdowns, time_range, time_increment, limit, level } = params;
+
+    const edge = campaign_id
+      ? `${config.apiVersion}/${campaign_id}/insights`
+      : `${config.apiVersion}/${config.adAccountId}/insights`;
+
+    const fields = [...INSIGHT_FIELDS, 'campaign_name', 'adset_name', 'ad_name', 'campaign_id', 'adset_id', 'ad_id', 'date_start', 'date_stop'];
+
+    const formBody = new URLSearchParams();
+    formBody.append('access_token', config.accessToken);
+    formBody.append('fields', fields.join(','));
+    formBody.append('limit', String(limit ?? 200));
+    formBody.append('sort', 'spend_descending');
+    formBody.append('async', 'true');
+
+    if (time_range) formBody.append('time_range', JSON.stringify(time_range));
+    if (breakdowns?.length) formBody.append('breakdowns', Array.isArray(breakdowns) ? breakdowns.join(',') : String(breakdowns));
+    if (time_increment != null) formBody.append('time_increment', String(time_increment));
+    if (level) formBody.append('level', level);
+
+    const url = `https://graph.facebook.com/${edge}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formBody.toString(),
+    });
+
+    const data = await response.json() as any;
+    if (!response.ok || data.error) {
+      const e = data.error ?? {};
+      throw new Error(e.message ?? `HTTP ${response.status}`);
+    }
+
+    const reportRunId = data.report_run_id;
+    if (!reportRunId) throw new Error(`Async insights response missing report_run_id. Raw: ${JSON.stringify(data)}`);
+    return String(reportRunId);
+  });
+}
+
+/** Poll an async insights report until complete (up to ~10 minutes). */
+export async function pollInsightsReport(reportRunId: string, maxAttempts = 40): Promise<void> {
+  const BASE_MS = 5_000;
+  const MAX_MS = 20_000;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) {
+      const delay = Math.min(BASE_MS * Math.pow(1.5, attempt - 1), MAX_MS);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+
+    const result = await rateLimitedCall(async () => {
+      const qp = new URLSearchParams({
+        access_token: config.accessToken,
+        fields: 'id,async_status,async_percent_completion',
+      });
+      const url = `https://graph.facebook.com/${config.apiVersion}/${reportRunId}?${qp.toString()}`;
+      const response = await fetch(url);
+      const data = await response.json() as any;
+      if (!response.ok || data.error) {
+        const e = data.error ?? {};
+        throw new Error(e.message ?? `HTTP ${response.status}`);
+      }
+      return data;
+    });
+
+    const status = (result.async_status ?? '').toLowerCase().replace(/ /g, '_');
+
+    if (status === 'job_completed') return;
+    if (status === 'job_failed' || status === 'job_skipped') {
+      throw new Error(`Insights report ${reportRunId} ${status}`);
+    }
+    // job_running or job_not_started — keep polling
+  }
+
+  throw new Error(`Insights report ${reportRunId} did not complete within ~10 minutes`);
+}
+
+/** Fetch results from a completed async insights report. */
+export async function fetchInsightsReport(reportRunId: string, after?: string): Promise<{ data: any[]; paging?: any }> {
+  return rateLimitedCall(async () => {
+    const qp = new URLSearchParams({
+      access_token: config.accessToken,
+      limit: '200',
+      ...(after ? { after } : {}),
+    });
+    const url = `https://graph.facebook.com/${config.apiVersion}/${reportRunId}/insights?${qp.toString()}`;
+    const response = await fetch(url);
+    const data = await response.json() as any;
+    if (!response.ok || data.error) {
+      const e = data.error ?? {};
+      throw new Error(e.message ?? `HTTP ${response.status}`);
+    }
+    return { data: data.data ?? [], paging: data.paging };
+  });
+}
+
 // ── Breakdown Insights ──
 
 export async function fetchBreakdownInsights(params: Record<string, any>): Promise<{ data: any[]; paging?: any }> {

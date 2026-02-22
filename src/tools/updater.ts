@@ -90,11 +90,12 @@ export const updaterTools = [
               type: 'object',
               description: 'Manual placement control. Omit to use Advantage+ Placements.',
               properties: {
-                publisher_platforms: { type: 'array', items: { type: 'string', enum: ['facebook', 'instagram', 'audience_network', 'messenger'] } },
+                publisher_platforms: { type: 'array', items: { type: 'string', enum: ['facebook', 'instagram', 'audience_network', 'messenger', 'threads'] } },
                 facebook_positions: { type: 'array', items: { type: 'string', enum: ['feed', 'story', 'marketplace', 'video_feeds', 'right_hand_column', 'reels', 'instream_video', 'search'] } },
                 instagram_positions: { type: 'array', items: { type: 'string', enum: ['stream', 'story', 'reels', 'explore', 'explore_home'] } },
                 audience_network_positions: { type: 'array', items: { type: 'string', enum: ['classic', 'instream_video'] } },
                 messenger_positions: { type: 'array', items: { type: 'string', enum: ['messenger_home', 'story'] } },
+                threads_positions: { type: 'array', items: { type: 'string', enum: ['feed'] }, description: 'Threads placements (requires publisher_platforms to include "threads")' },
               },
             },
           },
@@ -201,6 +202,7 @@ async function handleUpdateAdSet(args: any): Promise<any> {
       if (p.instagram_positions?.length) targeting.instagram_positions = p.instagram_positions;
       if (p.audience_network_positions?.length) targeting.audience_network_positions = p.audience_network_positions;
       if (p.messenger_positions?.length) targeting.messenger_positions = p.messenger_positions;
+      if (p.threads_positions?.length) targeting.threads_positions = p.threads_positions;
     }
     params.targeting = targeting;
   }

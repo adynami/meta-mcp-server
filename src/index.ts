@@ -15,6 +15,8 @@ import { duplicatorTools, handleDuplicatorTool } from './tools/duplicator.js';
 import { audienceTools, handleAudienceTool } from './tools/audience.js';
 import { updaterTools, handleUpdaterTool } from './tools/updater.js';
 import { pixelTools, handlePixelTool } from './tools/pixels.js';
+import { rulesTools, handleRulesTool } from './tools/rules.js';
+import { leadsTools, handleLeadsTool } from './tools/leads.js';
 
 const ALL_TOOLS = [
   ...managementTools,
@@ -25,6 +27,8 @@ const ALL_TOOLS = [
   ...audienceTools,
   ...updaterTools,
   ...pixelTools,
+  ...rulesTools,
+  ...leadsTools,
 ];
 
 const managementToolNames = new Set(managementTools.map(t => t.name));
@@ -35,6 +39,8 @@ const duplicatorToolNames = new Set(duplicatorTools.map(t => t.name));
 const audienceToolNames = new Set(audienceTools.map(t => t.name));
 const updaterToolNames = new Set(updaterTools.map(t => t.name));
 const pixelToolNames = new Set(pixelTools.map(t => t.name));
+const rulesToolNames = new Set(rulesTools.map(t => t.name));
+const leadsToolNames = new Set(leadsTools.map(t => t.name));
 
 const server = new Server(
   { name: 'meta-marketing-mcp', version: '1.1.0' },
@@ -67,6 +73,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       result = await handleUpdaterTool(name, args ?? {});
     } else if (pixelToolNames.has(name)) {
       result = await handlePixelTool(name, args ?? {});
+    } else if (rulesToolNames.has(name)) {
+      result = await handleRulesTool(name, args ?? {});
+    } else if (leadsToolNames.has(name)) {
+      result = await handleLeadsTool(name, args ?? {});
     } else {
       return {
         content: [{ type: 'text', text: `Unknown tool "${name}". Available: ${ALL_TOOLS.map(t => t.name).join(', ')}` }],
