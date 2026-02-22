@@ -101,15 +101,21 @@ async function fetchAllAdSets(campaignId: string): Promise<any[]> {
   return adSets;
 }
 
-/** Poll an async Graph API session until completed or failed (max ~5 min). */
-async function pollAsyncSession(sessionId: string, maxAttempts = 100): Promise<string> {
+/** Poll an async Graph API session until completed or failed (~20 min max with exponential backoff). */
+async function pollAsyncSession(sessionId: string, maxAttempts = 50): Promise<string> {
+  const BASE_MS = 5_000;
+  const MAX_MS = 30_000;
+
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) {
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      const delay = Math.min(BASE_MS * Math.pow(2, attempt - 1), MAX_MS);
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
 
     const session = await rateLimitedCall(() =>
-      graphGet(sessionId, { fields: 'id,status,result,results,error_message' }),
+      graphGet(sessionId, {
+        fields: 'id,status,result,results,error_message,error_code,error_subcode,error_user_title,error_user_msg',
+      }),
     );
     const status = (session.status ?? '').toLowerCase();
 
@@ -137,13 +143,16 @@ async function pollAsyncSession(sessionId: string, maxAttempts = 100): Promise<s
     }
 
     if (status === 'failed' || status === 'error') {
-      const detail = session.error_message ?? session.result?.error_message ?? JSON.stringify(session);
-      throw new Error(`Async copy session ${sessionId} failed: ${detail}`);
+      // Surface v25 error fields for actionable diagnostics
+      const userMsg = session.error_user_msg ?? session.error_user_title ?? session.error_message ?? JSON.stringify(session);
+      const code = session.error_code ? ` (code ${session.error_code})` : '';
+      const subcode = session.error_subcode ? ` (subcode ${session.error_subcode})` : '';
+      throw new Error(`Async copy session ${sessionId} failed: ${userMsg}${code}${subcode}`);
     }
     // in_progress / pending — keep polling
   }
 
-  throw new Error(`Async copy session ${sessionId} did not complete within ${maxAttempts * 3} seconds`);
+  throw new Error(`Async copy session ${sessionId} did not complete within ~20 minutes. The campaign may still be copying on Meta's side — check Ads Manager.`);
 }
 
 // ── Implementation ──
