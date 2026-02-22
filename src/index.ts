@@ -11,18 +11,21 @@ import { managementTools, handleManagementTool } from './tools/management.js';
 import { analystTools, handleAnalystTool } from './tools/analyst.js';
 import { creatorTools, handleCreatorTool } from './tools/creator.js';
 import { debugTools, handleDebugTool } from './tools/debug.js';
+import { duplicatorTools, handleDuplicatorTool } from './tools/duplicator.js';
 
 const ALL_TOOLS = [
   ...managementTools,
   ...analystTools,
   ...creatorTools,
   ...debugTools,
+  ...duplicatorTools,
 ];
 
 const managementToolNames = new Set(managementTools.map(t => t.name));
 const analystToolNames = new Set(analystTools.map(t => t.name));
 const creatorToolNames = new Set(creatorTools.map(t => t.name));
 const debugToolNames = new Set(debugTools.map(t => t.name));
+const duplicatorToolNames = new Set(duplicatorTools.map(t => t.name));
 
 const server = new Server(
   { name: 'meta-marketing-mcp', version: '1.1.0' },
@@ -47,6 +50,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       result = await handleCreatorTool(name, args ?? {});
     } else if (debugToolNames.has(name)) {
       result = await handleDebugTool(name, args ?? {});
+    } else if (duplicatorToolNames.has(name)) {
+      result = await handleDuplicatorTool(name, args ?? {});
     } else {
       return {
         content: [{ type: 'text', text: `Unknown tool "${name}". Available: ${ALL_TOOLS.map(t => t.name).join(', ')}` }],

@@ -21,7 +21,7 @@ export const creatorTools = [
   },
   {
     name: 'meta_deploy_campaign',
-    description: `Create a complete campaign in one step: Campaign + Ad Set + Ad. Use when the user wants to launch a new campaign. This is an atomic operation — if any step fails, all previous steps are rolled back automatically (no zombie campaigns). Requires an image_hash from meta_upload_image. This is a write operation — confirm details with the user before calling.`,
+    description: `Create a complete campaign in one step: Campaign + Ad Set + Ad. Supports all Meta budget modes (CBO/ABO), bid strategies (lowest cost, bid cap, cost cap, min ROAS), and daily/lifetime budgets. This is an atomic operation — if any step fails, all previous steps are rolled back automatically (no zombie campaigns). Requires an image_hash from meta_upload_image. This is a write operation — confirm details with the user before calling.`,
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -31,7 +31,44 @@ export const creatorTools = [
           enum: ['OUTCOME_AWARENESS', 'OUTCOME_ENGAGEMENT', 'OUTCOME_LEADS', 'OUTCOME_SALES', 'OUTCOME_TRAFFIC', 'OUTCOME_APP_PROMOTION'],
           description: 'Campaign objective. Use OUTCOME_SALES for purchase optimization, OUTCOME_TRAFFIC for link clicks.',
         },
-        daily_budget: { type: 'number', minimum: 1, description: 'Daily budget in major currency units (e.g., 50 for $50)' },
+
+        // --- Budget level ---
+        budget_level: {
+          type: 'string',
+          enum: ['CBO', 'ABO'],
+          description: 'CBO (default) = Advantage Campaign Budget — Meta allocates one campaign-level budget across ad sets automatically. ABO = Ad Set Budget — you control budget per ad set manually. Use CBO for scaling, ABO for testing.',
+        },
+        budget_type: {
+          type: 'string',
+          enum: ['daily', 'lifetime'],
+          description: 'daily (default) = spend this amount per day indefinitely. lifetime = spend this total amount over the campaign duration (requires end_time).',
+        },
+        daily_budget: { type: 'number', minimum: 1, description: 'Budget amount in major currency units (e.g. 50 for $50). Used as daily budget when budget_type=daily, or total lifetime budget when budget_type=lifetime.' },
+        end_time: { type: 'string', description: 'Required when budget_type=lifetime. Campaign end date/time in ISO 8601 format (e.g. 2025-12-31T23:59:59Z).' },
+
+        // --- Bid strategy ---
+        bid_strategy: {
+          type: 'string',
+          enum: ['LOWEST_COST_WITHOUT_CAP', 'LOWEST_COST_WITH_BID_CAP', 'COST_CAP', 'LOWEST_COST_WITH_MIN_ROAS'],
+          description: [
+            'LOWEST_COST_WITHOUT_CAP (default): Meta bids to maximise results within your budget. No bid control. Best for volume/scaling.',
+            'LOWEST_COST_WITH_BID_CAP: You set a hard max bid per auction (bid_amount required). Meta will not bid above this. Best for strict CPA control with some volume sacrifice.',
+            'COST_CAP: You set a target average cost per result (bid_amount required). Meta may exceed it occasionally but targets the average. Best for CPA targets with flexibility.',
+            'LOWEST_COST_WITH_MIN_ROAS: You set a minimum acceptable ROAS floor (min_roas required). Meta only enters auctions expected to meet it. Best for revenue-focused campaigns.',
+          ].join(' | '),
+        },
+        bid_amount: {
+          type: 'number',
+          minimum: 0.01,
+          description: 'Required for LOWEST_COST_WITH_BID_CAP and COST_CAP. The bid cap or target cost per result in major currency units (e.g. 15 for $15 per purchase). Not used for LOWEST_COST_WITHOUT_CAP or LOWEST_COST_WITH_MIN_ROAS.',
+        },
+        min_roas: {
+          type: 'number',
+          minimum: 0.01,
+          description: 'Required for LOWEST_COST_WITH_MIN_ROAS. Minimum acceptable return on ad spend as a multiplier (e.g. 2.5 means $2.50 revenue per $1 spent). Meta converts this internally to basis points.',
+        },
+
+        // --- Targeting ---
         targeting: {
           type: 'object',
           description: 'Audience targeting specification',
@@ -47,6 +84,8 @@ export const creatorTools = [
             },
           },
         },
+
+        // --- Creative ---
         image_hash: { type: 'string', description: 'Image hash from meta_upload_image' },
         page_id: { type: 'string', description: 'Facebook Page ID to run ads from' },
         ad_copy: {
@@ -64,6 +103,7 @@ export const creatorTools = [
           required: ['headline', 'body', 'link_url'],
         },
         pixel_id: { type: 'string', description: 'Meta Pixel ID for conversion tracking. Required for OUTCOME_SALES and OUTCOME_LEADS. Default: 858047089973360' },
+        use_advantage_audience: { type: 'boolean', description: 'Set to true to enable Meta Advantage+ audience targeting. Set to false to use manual targeting spec. Default: false.' },
         start_immediately: { type: 'boolean', description: 'true = ACTIVE, false = PAUSED (default: true)' },
       },
       required: ['campaign_name', 'objective', 'daily_budget', 'targeting', 'image_hash', 'page_id', 'ad_copy'],
@@ -126,36 +166,102 @@ async function handleDeploy(args: any): Promise<any> {
   const account = await getAccountContext();
   const budgetCents = Math.round(args.daily_budget * 100);
   const status = args.start_immediately === false ? 'PAUSED' : 'ACTIVE';
+  const budgetLevel = (args.budget_level ?? 'CBO') as 'CBO' | 'ABO';
+  const budgetType = (args.budget_type ?? 'daily') as 'daily' | 'lifetime';
+  const bidStrategy = (args.bid_strategy ?? 'LOWEST_COST_WITHOUT_CAP') as string;
   const steps: string[] = [];
   let campaignId: string | null = null;
   let adsetId: string | null = null;
 
+  // Validate bid_amount is provided when required
+  if ((bidStrategy === 'LOWEST_COST_WITH_BID_CAP' || bidStrategy === 'COST_CAP') && !args.bid_amount) {
+    return { success: false, error: `bid_amount is required when bid_strategy is ${bidStrategy}. Provide a value in major currency units (e.g. 15 for $15).` };
+  }
+  if (bidStrategy === 'LOWEST_COST_WITH_MIN_ROAS' && !args.min_roas) {
+    return { success: false, error: 'min_roas is required when bid_strategy is LOWEST_COST_WITH_MIN_ROAS. Provide a multiplier (e.g. 2.5 for 2.5x ROAS).' };
+  }
+  if (budgetType === 'lifetime' && !args.end_time) {
+    return { success: false, error: 'end_time is required when budget_type is lifetime. Provide an ISO 8601 datetime (e.g. 2025-12-31T23:59:59Z).' };
+  }
+
   if (config.dryRun) {
-    return { dry_run: true, message: 'Simulated deployment', campaign_name: args.campaign_name, objective: args.objective, daily_budget: `${account.currency} ${args.daily_budget}`, status };
+    return {
+      dry_run: true,
+      message: 'Simulated deployment',
+      campaign_name: args.campaign_name,
+      objective: args.objective,
+      budget_level: budgetLevel,
+      budget_type: budgetType,
+      budget: `${account.currency} ${args.daily_budget}${budgetType === 'daily' ? '/day' : ' lifetime'}`,
+      bid_strategy: bidStrategy,
+      ...(args.bid_amount && { bid_amount: `${account.currency} ${args.bid_amount}` }),
+      ...(args.min_roas && { min_roas: `${args.min_roas}x` }),
+      status,
+    };
   }
 
   try {
-    const campaignResult = await createCampaign({ name: args.campaign_name, objective: args.objective, status, special_ad_categories: [] });
+    // --- Campaign params ---
+    const campaignParams: Record<string, any> = {
+      name: args.campaign_name,
+      objective: args.objective,
+      status,
+      special_ad_categories: [],
+    };
+
+    if (budgetLevel === 'CBO') {
+      // CBO: budget lives on the campaign, Meta distributes across ad sets
+      campaignParams[budgetType === 'daily' ? 'daily_budget' : 'lifetime_budget'] = budgetCents.toString();
+      campaignParams.bid_strategy = bidStrategy;
+    }
+
+    const campaignResult = await createCampaign(campaignParams);
     campaignId = campaignResult.id;
     steps.push(`Campaign ${campaignId}`);
+
+    const useAdvantageAudience = args.use_advantage_audience === true;
 
     const targeting = {
       age_min: args.targeting.age_min ?? 18,
       age_max: args.targeting.age_max ?? 65,
       genders: args.targeting.genders ?? [0],
       geo_locations: { countries: args.targeting.geo_locations?.countries ?? ['US'], location_types: ['home', 'recent'] },
+      targeting_automation: { advantage_audience: useAdvantageAudience ? 1 : 0 },
     };
 
+    // --- Ad set params ---
     const adsetParams: Record<string, any> = {
       campaign_id: campaignId,
       name: `${args.campaign_name} - Ad Set`,
-      daily_budget: budgetCents.toString(),
       billing_event: 'IMPRESSIONS',
       optimization_goal: objectiveToOptimization(args.objective),
-      bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
       targeting,
       status,
     };
+
+    if (budgetLevel === 'ABO') {
+      // ABO: budget and bid strategy live on the ad set
+      adsetParams[budgetType === 'daily' ? 'daily_budget' : 'lifetime_budget'] = budgetCents.toString();
+      adsetParams.bid_strategy = bidStrategy;
+      if (budgetType === 'lifetime' && args.end_time) {
+        adsetParams.end_time = args.end_time;
+      }
+    } else {
+      // CBO: ad set opts in to campaign budget sharing
+      adsetParams.is_adset_budget_sharing_enabled = true;
+    }
+
+    // Bid amount — required for BID_CAP and COST_CAP, on ad set regardless of CBO/ABO
+    if (bidStrategy === 'LOWEST_COST_WITH_BID_CAP' || bidStrategy === 'COST_CAP') {
+      adsetParams.bid_amount = Math.round(args.bid_amount * 100).toString();
+    }
+
+    // Min ROAS constraint — Meta expects integer basis points (1.0 ROAS = 10000)
+    if (bidStrategy === 'LOWEST_COST_WITH_MIN_ROAS') {
+      adsetParams.bid_constraints = {
+        roas_average_floor: Math.round(args.min_roas * 10000),
+      };
+    }
 
     // OUTCOME_SALES requires a pixel + conversion event on the ad set
     if (args.objective === 'OUTCOME_SALES') {
@@ -198,7 +304,11 @@ async function handleDeploy(args: any): Promise<any> {
       adset_id: adsetId,
       ad_id: adResult.id,
       status,
-      budget: `${account.currency} ${args.daily_budget}/day`,
+      budget_level: budgetLevel,
+      budget: `${account.currency} ${args.daily_budget}${budgetType === 'daily' ? '/day' : ' lifetime'}`,
+      bid_strategy: bidStrategy,
+      ...(args.bid_amount && { bid_amount: `${account.currency} ${args.bid_amount}` }),
+      ...(args.min_roas && { min_roas: `${args.min_roas}x ROAS floor` }),
     };
   } catch (error: any) {
     const rollbackErrors: string[] = [];
