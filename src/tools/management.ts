@@ -4,7 +4,7 @@ import {
   fetchAccountInsights, fetchCampaignInsights,
   updateCampaignStatus as apiUpdateStatus,
   readCampaign, readAdSet, readAd as apiReadAd,
-  getAccountContext, createAd,
+  getAccountContext, createAd, searchTargeting,
 } from '../meta-client.js';
 import { resolveRange, type TimeRangeKey } from '../utils/date-ranges.js';
 import { computeMetrics, type RawInsightRow } from '../utils/metrics.js';
@@ -122,6 +122,22 @@ export const managementTools = [
     inputSchema: { type: 'object' as const, properties: {} },
   },
   {
+    name: 'meta_search_targeting',
+    description: `Search for interest or behavior targeting options by keyword. Returns IDs and names you can use in the targeting spec of meta_deploy_campaign and meta_update_adset. Use when the user wants to target people interested in "fitness", "travel", "luxury goods", etc., or use specific behaviors like "frequent travelers" or "online shoppers".`,
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        type: {
+          type: 'string',
+          enum: ['interest', 'behavior'],
+          description: 'interest = Facebook interest categories (hobbies, topics, pages). behavior = purchase behaviors, device usage, travel patterns, etc.',
+        },
+        query: { type: 'string', description: 'Keyword to search for (e.g. "fitness", "travel", "luxury", "small business")' },
+      },
+      required: ['type', 'query'],
+    },
+  },
+  {
     name: 'meta_add_ad',
     description: `Create a new ad inside an existing ad set. Use when adding additional ad variations (different images/copy) to an ad set that already exists — e.g., A/B testing creatives within one ad set. Requires an image_hash from meta_upload_image. For creating a full campaign from scratch, use meta_deploy_campaign instead.`,
     inputSchema: {
@@ -161,6 +177,7 @@ export async function handleManagementTool(name: string, args: any): Promise<any
     case 'meta_get_insights': return getInsights(args);
     case 'meta_update_campaign_status': return updateStatus(args);
     case 'meta_get_account': return getAccountContext();
+    case 'meta_search_targeting': return handleSearchTargeting(args);
     case 'meta_add_ad': return addAd(args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
@@ -328,6 +345,10 @@ async function getInsights(args: any): Promise<any> {
       ctr: m.ctr, cpc: m.cpc, cpm: m.cpm,
       conversions: m.conversions, conversion_value: m.conversion_value,
       roas: m.roas, cpa: m.cpa, frequency: m.frequency, reach: m.reach,
+      ...(m.video && { video: m.video }),
+      ...(m.quality_ranking && { quality_ranking: m.quality_ranking }),
+      ...(m.engagement_rate_ranking && { engagement_rate_ranking: m.engagement_rate_ranking }),
+      ...(m.conversion_rate_ranking && { conversion_rate_ranking: m.conversion_rate_ranking }),
     };
   };
 
@@ -341,6 +362,24 @@ async function updateStatus(args: any): Promise<any> {
   }
   await apiUpdateStatus(args.campaign_id, args.status);
   return { success: true, campaign_id: args.campaign_id, new_status: args.status };
+}
+
+async function handleSearchTargeting(args: any): Promise<any> {
+  const results = await searchTargeting(args.type, args.query);
+  return {
+    type: args.type,
+    query: args.query,
+    results: results.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      ...(r.audience_size_lower_bound != null && {
+        audience_size: `${Number(r.audience_size_lower_bound).toLocaleString()}–${Number(r.audience_size_upper_bound ?? 0).toLocaleString()}`,
+      }),
+      ...(r.path?.length && { path: r.path.join(' > ') }),
+      ...(r.description && { description: r.description }),
+    })),
+    usage: `Pass ids into targeting.interests or targeting.behaviors when calling meta_deploy_campaign or meta_update_adset. Example: { "interests": [{ "id": "${results[0]?.id ?? '123'}", "name": "${results[0]?.name ?? 'Example'}" }] }`,
+  };
 }
 
 async function addAd(args: any): Promise<any> {

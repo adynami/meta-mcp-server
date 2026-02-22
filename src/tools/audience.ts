@@ -66,6 +66,58 @@ export const audienceTools = [
     },
   },
   {
+    name: 'meta_create_website_audience',
+    description: `Create a custom audience of website visitors tracked by a Meta Pixel. Use for retargeting — e.g., "people who visited /checkout but didn't purchase", "all site visitors in last 30 days", "people who triggered the Purchase event". Use meta_list_pixels to find your pixel_id.`,
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        name: { type: 'string', description: 'Audience name' },
+        pixel_id: { type: 'string', description: 'Meta Pixel ID to base the audience on (from meta_list_pixels)' },
+        retention_days: {
+          type: 'number',
+          minimum: 1,
+          maximum: 180,
+          description: 'Lookback window in days — how far back to include visitors (default: 30, max: 180)',
+        },
+        rules: {
+          type: 'array',
+          description: 'URL or event conditions to filter visitors. Omit to capture ALL website visitors.',
+          items: {
+            type: 'object',
+            properties: {
+              type: {
+                type: 'string',
+                enum: ['url', 'event'],
+                description: 'url = filter by page URL, event = filter by pixel event name (Purchase, AddToCart, Lead, etc.)',
+              },
+              operator: {
+                type: 'string',
+                enum: ['contains', 'equals', 'not_contains', 'starts_with'],
+                description: 'How to match the value. For event type, use "equals".',
+              },
+              value: { type: 'string', description: 'URL substring, full URL, or event name (e.g. "/checkout", "https://example.com/buy", "Purchase")' },
+            },
+            required: ['type', 'operator', 'value'],
+          },
+        },
+        exclude_rules: {
+          type: 'array',
+          description: 'Conditions to EXCLUDE from the audience — e.g., exclude people who already purchased.',
+          items: {
+            type: 'object',
+            properties: {
+              type: { type: 'string', enum: ['url', 'event'] },
+              operator: { type: 'string', enum: ['contains', 'equals', 'not_contains', 'starts_with'] },
+              value: { type: 'string' },
+            },
+            required: ['type', 'operator', 'value'],
+          },
+        },
+      },
+      required: ['name', 'pixel_id'],
+    },
+  },
+  {
     name: 'meta_delete_audience',
     description: 'Permanently delete a custom audience. Cannot be undone. The audience will be removed from any active ad sets using it. Confirm with the user before calling.',
     inputSchema: {
@@ -83,6 +135,7 @@ export async function handleAudienceTool(name: string, args: any): Promise<any> 
     case 'meta_list_audiences': return listAudiences(args);
     case 'meta_create_customer_audience': return createFromCustomerList(args);
     case 'meta_create_lookalike_audience': return createLookalike(args);
+    case 'meta_create_website_audience': return createWebsiteAudience(args);
     case 'meta_delete_audience': return removeAudience(args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
@@ -201,6 +254,77 @@ async function createLookalike(args: any): Promise<any> {
     ratio: `${(ratio * 100).toFixed(0)}%`,
     type,
     note: 'Lookalike audience takes 1–6 hours to populate.',
+  };
+}
+
+const OPERATOR_MAP: Record<string, string> = {
+  contains:     'i_contains',
+  equals:       'eq',
+  not_contains: 'i_not_contains',
+  starts_with:  'i_starts_with',
+};
+
+function buildUrlEventFilters(rules: any[]): any[] {
+  return rules.map((r: any) => ({
+    field: r.type === 'event' ? 'event' : 'url',
+    operator: OPERATOR_MAP[r.operator] ?? 'i_contains',
+    value: r.value,
+  }));
+}
+
+function buildAudienceRule(pixelId: string, retentionSeconds: number, includeRules: any[], excludeRules: any[]): any {
+  const makeRuleEntry = (filters: any[]) => {
+    const entry: Record<string, any> = {
+      event_sources: [{ id: pixelId, type: 'pixel' }],
+      retention_seconds: retentionSeconds,
+    };
+    if (filters.length > 0) {
+      entry.filter = { operator: 'and', filters };
+    }
+    return entry;
+  };
+
+  const rule: Record<string, any> = {
+    inclusions: {
+      operator: 'or',
+      rules: [makeRuleEntry(includeRules.length ? buildUrlEventFilters(includeRules) : [])],
+    },
+  };
+
+  if (excludeRules.length > 0) {
+    rule.exclusions = {
+      operator: 'or',
+      rules: [makeRuleEntry(buildUrlEventFilters(excludeRules))],
+    };
+  }
+
+  return rule;
+}
+
+async function createWebsiteAudience(args: any): Promise<any> {
+  const retentionDays = args.retention_days ?? 30;
+  const retentionSeconds = retentionDays * 86400;
+  const includeRules: any[] = args.rules ?? [];
+  const excludeRules: any[] = args.exclude_rules ?? [];
+
+  const rule = buildAudienceRule(args.pixel_id, retentionSeconds, includeRules, excludeRules);
+
+  const result = await createCustomAudience({
+    name: args.name,
+    subtype: 'WEBSITE',
+    retention_days: retentionDays,
+    rule: JSON.stringify(rule),
+  });
+
+  return {
+    success: true,
+    audience_id: result.id,
+    audience_name: args.name,
+    pixel_id: args.pixel_id,
+    retention_days: retentionDays,
+    include_rules: includeRules.length,
+    exclude_rules: excludeRules.length,
+    note: 'Website audience takes ~30 minutes to populate. Size depends on site traffic and retention window.',
   };
 }
 

@@ -152,6 +152,10 @@ async function getBreakdownInsights(args: any): Promise<any> {
       conversions: m.conversions,
       cpa: m.cpa,
       roas: m.roas,
+      ...(m.video && { video: m.video }),
+      ...(m.quality_ranking && { quality_ranking: m.quality_ranking }),
+      ...(m.engagement_rate_ranking && { engagement_rate_ranking: m.engagement_rate_ranking }),
+      ...(m.conversion_rate_ranking && { conversion_rate_ranking: m.conversion_rate_ranking }),
     };
   });
 

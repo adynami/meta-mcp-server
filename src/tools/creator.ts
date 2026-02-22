@@ -93,6 +93,77 @@ export const creatorTools = [
                 countries: { type: 'array', items: { type: 'string', minLength: 2, maxLength: 2 }, description: '2-letter ISO country codes (default ["US"])' },
               },
             },
+            interests: {
+              type: 'array',
+              items: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' } } },
+              description: 'Interest targeting — use meta_search_targeting to find IDs. Example: [{ "id": "6003107902433", "name": "Fitness" }]',
+            },
+            behaviors: {
+              type: 'array',
+              items: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' } } },
+              description: 'Behavior targeting — use meta_search_targeting to find IDs. Example: [{ "id": "6002714895372", "name": "Frequent travelers" }]',
+            },
+            custom_audiences: {
+              type: 'array',
+              items: { type: 'object', properties: { id: { type: 'string' } } },
+              description: 'Custom audience IDs to include. Example: [{ "id": "12345678" }]',
+            },
+            excluded_custom_audiences: {
+              type: 'array',
+              items: { type: 'object', properties: { id: { type: 'string' } } },
+              description: 'Custom audience IDs to exclude (suppression lists). Example: [{ "id": "12345678" }]',
+            },
+            placements: {
+              type: 'object',
+              description: 'Manual placement control. Omit to use Advantage+ Placements (Meta auto-selects — recommended). Provide to restrict to specific placements.',
+              properties: {
+                publisher_platforms: {
+                  type: 'array',
+                  items: { type: 'string', enum: ['facebook', 'instagram', 'audience_network', 'messenger'] },
+                  description: 'Platforms to run on (default: all)',
+                },
+                facebook_positions: {
+                  type: 'array',
+                  items: { type: 'string', enum: ['feed', 'story', 'marketplace', 'video_feeds', 'right_hand_column', 'reels', 'instream_video', 'search'] },
+                  description: 'Facebook placements',
+                },
+                instagram_positions: {
+                  type: 'array',
+                  items: { type: 'string', enum: ['stream', 'story', 'reels', 'explore', 'explore_home'] },
+                  description: 'Instagram placements',
+                },
+                audience_network_positions: {
+                  type: 'array',
+                  items: { type: 'string', enum: ['classic', 'instream_video'] },
+                  description: 'Audience Network placements',
+                },
+                messenger_positions: {
+                  type: 'array',
+                  items: { type: 'string', enum: ['messenger_home', 'story'] },
+                  description: 'Messenger placements',
+                },
+              },
+            },
+          },
+        },
+
+        // --- Schedule ---
+        start_time: { type: 'string', description: 'Campaign start time in ISO 8601 format (e.g. 2025-06-01T00:00:00Z). Omit to start immediately.' },
+        ad_schedule: {
+          type: 'array',
+          description: 'Dayparting — run ads only during specific hours/days. Requires budget_type=lifetime. Each entry specifies a time window.',
+          items: {
+            type: 'object',
+            properties: {
+              days: {
+                type: 'array',
+                items: { type: 'number', enum: [0, 1, 2, 3, 4, 5, 6] },
+                description: '0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday',
+              },
+              start_minute: { type: 'number', minimum: 0, maximum: 1439, description: 'Minutes from midnight (0=12:00am, 480=8:00am, 540=9:00am, 720=noon, 1020=5:00pm, 1200=8:00pm)' },
+              end_minute: { type: 'number', minimum: 1, maximum: 1440, description: 'Minutes from midnight (exclusive end, max 1440=midnight)' },
+            },
+            required: ['days', 'start_minute', 'end_minute'],
           },
         },
 
@@ -266,6 +337,9 @@ async function handleDeploy(args: any): Promise<any> {
   if (budgetType === 'lifetime' && !args.end_time) {
     return { success: false, error: 'end_time is required when budget_type is lifetime. Provide an ISO 8601 datetime (e.g. 2025-12-31T23:59:59Z).' };
   }
+  if (args.ad_schedule?.length && budgetType !== 'lifetime') {
+    return { success: false, error: 'ad_schedule (dayparting) requires budget_type=lifetime. Meta only supports dayparting on lifetime budget campaigns.' };
+  }
 
   // Validate creative inputs
   const creativeType = (args.creative_type ?? 'image') as 'image' | 'video' | 'carousel';
@@ -315,6 +389,8 @@ async function handleDeploy(args: any): Promise<any> {
       campaignParams[budgetType === 'daily' ? 'daily_budget' : 'lifetime_budget'] = budgetCents.toString();
       campaignParams.bid_strategy = bidStrategy;
     }
+    if (args.start_time) campaignParams.start_time = args.start_time;
+    if (budgetType === 'lifetime' && args.end_time) campaignParams.stop_time = args.end_time;
 
     const campaignResult = await createCampaign(campaignParams);
     campaignId = campaignResult.id;
@@ -322,13 +398,36 @@ async function handleDeploy(args: any): Promise<any> {
 
     const useAdvantageAudience = args.use_advantage_audience === true;
 
-    const targeting = {
-      age_min: args.targeting.age_min ?? 18,
-      age_max: args.targeting.age_max ?? 65,
-      genders: args.targeting.genders ?? [0],
-      geo_locations: { countries: args.targeting.geo_locations?.countries ?? ['US'], location_types: ['home', 'recent'] },
+    const t = args.targeting;
+    const targeting: Record<string, any> = {
+      age_min: t.age_min ?? 18,
+      age_max: t.age_max ?? 65,
+      genders: t.genders ?? [0],
+      geo_locations: { countries: t.geo_locations?.countries ?? ['US'], location_types: ['home', 'recent'] },
       targeting_automation: { advantage_audience: useAdvantageAudience ? 1 : 0 },
     };
+
+    // Interest / behavior targeting via flexible_spec
+    if (t.interests?.length || t.behaviors?.length) {
+      const spec: Record<string, any> = {};
+      if (t.interests?.length) spec.interests = t.interests.map((i: any) => ({ id: i.id }));
+      if (t.behaviors?.length) spec.behaviors = t.behaviors.map((b: any) => ({ id: b.id }));
+      targeting.flexible_spec = [spec];
+    }
+
+    // Custom audience include / exclude
+    if (t.custom_audiences?.length) targeting.custom_audiences = t.custom_audiences.map((a: any) => ({ id: a.id }));
+    if (t.excluded_custom_audiences?.length) targeting.excluded_custom_audiences = t.excluded_custom_audiences.map((a: any) => ({ id: a.id }));
+
+    // Manual placements (omitting lets Meta use Advantage+ Placements)
+    if (t.placements) {
+      const p = t.placements;
+      if (p.publisher_platforms?.length) targeting.publisher_platforms = p.publisher_platforms;
+      if (p.facebook_positions?.length) targeting.facebook_positions = p.facebook_positions;
+      if (p.instagram_positions?.length) targeting.instagram_positions = p.instagram_positions;
+      if (p.audience_network_positions?.length) targeting.audience_network_positions = p.audience_network_positions;
+      if (p.messenger_positions?.length) targeting.messenger_positions = p.messenger_positions;
+    }
 
     // --- Ad set params ---
     const adsetParams: Record<string, any> = {
@@ -344,13 +443,14 @@ async function handleDeploy(args: any): Promise<any> {
       // ABO: budget and bid strategy live on the ad set
       adsetParams[budgetType === 'daily' ? 'daily_budget' : 'lifetime_budget'] = budgetCents.toString();
       adsetParams.bid_strategy = bidStrategy;
-      if (budgetType === 'lifetime' && args.end_time) {
-        adsetParams.end_time = args.end_time;
-      }
+      if (budgetType === 'lifetime' && args.end_time) adsetParams.end_time = args.end_time;
     } else {
       // CBO: ad set opts in to campaign budget sharing
       adsetParams.is_adset_budget_sharing_enabled = true;
     }
+
+    if (args.start_time) adsetParams.start_time = args.start_time;
+    if (args.ad_schedule?.length) adsetParams.adset_schedule = args.ad_schedule;
 
     // Bid amount — required for BID_CAP and COST_CAP, on ad set regardless of CBO/ABO
     if (bidStrategy === 'LOWEST_COST_WITH_BID_CAP' || bidStrategy === 'COST_CAP') {

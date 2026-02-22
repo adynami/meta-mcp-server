@@ -48,6 +48,12 @@ export function clearAccountCache(): void {
 const INSIGHT_FIELDS = [
   'impressions', 'clicks', 'spend', 'cpm', 'frequency', 'reach',
   'actions', 'action_values',
+  // Video engagement
+  'video_p25_watched_actions', 'video_p50_watched_actions',
+  'video_p75_watched_actions', 'video_p100_watched_actions',
+  'video_avg_time_watched_actions',
+  // Creative quality rankings
+  'quality_ranking', 'engagement_rate_ranking', 'conversion_rate_ranking',
 ];
 
 export async function fetchCampaigns(
@@ -493,6 +499,32 @@ export async function getPixelStats(pixelId: string, params: Record<string, any>
       throw new Error(e.message ?? `HTTP ${response.status}`);
     }
     return data;
+  });
+}
+
+// ── Targeting Search ──
+
+export async function searchTargeting(type: 'interest' | 'behavior', query: string): Promise<any[]> {
+  return rateLimitedCall(async () => {
+    const qp = new URLSearchParams({
+      access_token: config.accessToken,
+      q: query,
+      limit: '25',
+    });
+    if (type === 'interest') {
+      qp.append('type', 'adinterest');
+    } else {
+      qp.append('type', 'adTargetingCategory');
+      qp.append('class', 'behaviors');
+    }
+    const url = `https://graph.facebook.com/${config.apiVersion}/search?${qp.toString()}`;
+    const response = await fetch(url);
+    const data = await response.json() as any;
+    if (!response.ok || data.error) {
+      const e = data.error ?? {};
+      throw new Error(e.message ?? `HTTP ${response.status}`);
+    }
+    return data.data ?? [];
   });
 }
 

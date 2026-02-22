@@ -76,6 +76,40 @@ export const updaterTools = [
               },
               description: 'Custom audiences to include or exclude. Each entry: { id: "...", exclusion?: true }',
             },
+            interests: {
+              type: 'array',
+              items: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' } } },
+              description: 'Interest targeting — use meta_search_targeting to find IDs',
+            },
+            behaviors: {
+              type: 'array',
+              items: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' } } },
+              description: 'Behavior targeting — use meta_search_targeting to find IDs',
+            },
+            placements: {
+              type: 'object',
+              description: 'Manual placement control. Omit to use Advantage+ Placements.',
+              properties: {
+                publisher_platforms: { type: 'array', items: { type: 'string', enum: ['facebook', 'instagram', 'audience_network', 'messenger'] } },
+                facebook_positions: { type: 'array', items: { type: 'string', enum: ['feed', 'story', 'marketplace', 'video_feeds', 'right_hand_column', 'reels', 'instream_video', 'search'] } },
+                instagram_positions: { type: 'array', items: { type: 'string', enum: ['stream', 'story', 'reels', 'explore', 'explore_home'] } },
+                audience_network_positions: { type: 'array', items: { type: 'string', enum: ['classic', 'instream_video'] } },
+                messenger_positions: { type: 'array', items: { type: 'string', enum: ['messenger_home', 'story'] } },
+              },
+            },
+          },
+        },
+        ad_schedule: {
+          type: 'array',
+          description: 'Replace dayparting schedule. Requires lifetime budget on the ad set. Each entry: { days: [0-6], start_minute: 0-1439, end_minute: 1-1440 } where 0=Sunday, minutes from midnight.',
+          items: {
+            type: 'object',
+            properties: {
+              days: { type: 'array', items: { type: 'number', enum: [0, 1, 2, 3, 4, 5, 6] } },
+              start_minute: { type: 'number', minimum: 0, maximum: 1439 },
+              end_minute: { type: 'number', minimum: 1, maximum: 1440 },
+            },
+            required: ['days', 'start_minute', 'end_minute'],
           },
         },
       },
@@ -154,8 +188,24 @@ async function handleUpdateAdSet(args: any): Promise<any> {
       if (inclusions.length) targeting.custom_audiences = inclusions.map((a: any) => ({ id: a.id }));
       if (exclusions.length) targeting.excluded_custom_audiences = exclusions.map((a: any) => ({ id: a.id }));
     }
+    if (t.interests?.length || t.behaviors?.length) {
+      const spec: Record<string, any> = {};
+      if (t.interests?.length) spec.interests = t.interests.map((i: any) => ({ id: i.id }));
+      if (t.behaviors?.length) spec.behaviors = t.behaviors.map((b: any) => ({ id: b.id }));
+      targeting.flexible_spec = [spec];
+    }
+    if (t.placements) {
+      const p = t.placements;
+      if (p.publisher_platforms?.length) targeting.publisher_platforms = p.publisher_platforms;
+      if (p.facebook_positions?.length) targeting.facebook_positions = p.facebook_positions;
+      if (p.instagram_positions?.length) targeting.instagram_positions = p.instagram_positions;
+      if (p.audience_network_positions?.length) targeting.audience_network_positions = p.audience_network_positions;
+      if (p.messenger_positions?.length) targeting.messenger_positions = p.messenger_positions;
+    }
     params.targeting = targeting;
   }
+
+  if (args.ad_schedule?.length) params.adset_schedule = args.ad_schedule;
 
   if (Object.keys(params).length === 0) {
     return { success: false, error: 'No fields to update were provided.' };
