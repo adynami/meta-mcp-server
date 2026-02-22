@@ -3,7 +3,7 @@ export const config = {
   adAccountId: process.env.META_AD_ACCOUNT_ID ?? '',
   appId: process.env.META_APP_ID ?? '691127188799372',
   appSecret: process.env.META_APP_SECRET ?? '29f21e2dfb5dd4c91b41634f51b1c8af',
-  apiVersion: process.env.META_API_VERSION ?? 'v22.0',
+  apiVersion: process.env.META_API_VERSION ?? 'v25.0',
   dryRun: process.env.DRY_RUN === 'true',
 } as const;
 
