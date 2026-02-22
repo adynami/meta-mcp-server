@@ -1,9 +1,48 @@
 import { config } from '../config.js';
-import { fetchAccountInsights, fetchInsightsBreakdown, getAccountContext } from '../meta-client.js';
+import { fetchAccountInsights, fetchInsightsBreakdown, fetchBreakdownInsights, getAccountContext } from '../meta-client.js';
 import { resolveRange, resolvePreviousPeriod, type TimeRangeKey } from '../utils/date-ranges.js';
 import { computeMetrics, pctChange, type RawInsightRow, type ComputedMetrics } from '../utils/metrics.js';
 
 export const analystTools = [
+  {
+    name: 'meta_get_breakdown_insights',
+    description: `Get performance metrics broken down by a dimension (age, gender, country, platform, placement, device) and/or a time series (daily, weekly). Use when the user asks "which country is performing best?", "what age group has the best ROAS?", "show me performance by placement", or "how did results trend day by day?". Dimensions and time series can be combined — e.g. breakdown=country with time_series=daily gives daily performance by country.`,
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        time_range: {
+          type: 'string',
+          enum: ['last_3d', 'last_7d', 'last_14d', 'last_30d', 'last_90d', 'this_month', 'last_month'],
+          description: 'Analysis period (default: last_7d)',
+        },
+        breakdown: {
+          type: 'string',
+          enum: ['age', 'gender', 'age_gender', 'country', 'platform', 'placement', 'device'],
+          description: [
+            'age: break down by age group (13-17, 18-24, 25-34, 35-44, 45-54, 55-64, 65+)',
+            'gender: break down by male/female/unknown',
+            'age_gender: both age and gender simultaneously',
+            'country: break down by country code',
+            'platform: break down by publisher platform (facebook, instagram, audience_network, messenger)',
+            'placement: break down by platform + position + device (most granular)',
+            'device: break down by impression device type',
+          ].join(' | '),
+        },
+        time_series: {
+          type: 'string',
+          enum: ['daily', 'weekly', 'monthly'],
+          description: 'Add time dimension to the breakdown. daily = one row per day, weekly = one row per 7-day period, monthly = one row per month. Can be combined with breakdown.',
+        },
+        campaign_id: { type: 'string', description: 'Restrict to a specific campaign' },
+        level: {
+          type: 'string',
+          enum: ['account', 'campaign', 'adset', 'ad'],
+          description: 'Aggregation level (default: account). Use "campaign" to see per-campaign breakdown rows.',
+        },
+        limit: { type: 'number', minimum: 1, maximum: 200, description: 'Max rows (default 50)' },
+      },
+    },
+  },
   {
     name: 'meta_account_intelligence',
     description: `Generate a high-density intelligence report for the ad account. Use this when the user asks "how are my ads doing?", wants a performance overview, or needs to identify problems.
@@ -34,7 +73,96 @@ Use response_format="concise" if you only need the summary text. Use "detailed" 
 
 export async function handleAnalystTool(name: string, args: any): Promise<any> {
   if (name === 'meta_account_intelligence') return getAccountIntelligence(args);
+  if (name === 'meta_get_breakdown_insights') return getBreakdownInsights(args);
   throw new Error(`Unknown tool: ${name}`);
+}
+
+// Breakdown dimension → Meta API breakdowns param
+const BREAKDOWN_MAP: Record<string, string[]> = {
+  age:        ['age'],
+  gender:     ['gender'],
+  age_gender: ['age', 'gender'],
+  country:    ['country'],
+  platform:   ['publisher_platform'],
+  placement:  ['publisher_platform', 'platform_position', 'impression_device'],
+  device:     ['impression_device'],
+};
+
+// Dimension fields that appear in each row (for display)
+const DIMENSION_FIELDS: Record<string, string[]> = {
+  age:        ['age'],
+  gender:     ['gender'],
+  age_gender: ['age', 'gender'],
+  country:    ['country'],
+  platform:   ['publisher_platform'],
+  placement:  ['publisher_platform', 'platform_position', 'impression_device'],
+  device:     ['impression_device'],
+};
+
+const TIME_INCREMENT_MAP: Record<string, number | string> = {
+  daily:   1,
+  weekly:  7,
+  monthly: 'monthly',
+};
+
+async function getBreakdownInsights(args: any): Promise<any> {
+  const rangeKey = (args.time_range ?? 'last_7d') as TimeRangeKey;
+  const range = resolveRange(rangeKey);
+
+  const breakdowns = args.breakdown ? BREAKDOWN_MAP[args.breakdown] : undefined;
+  const time_increment = args.time_series ? TIME_INCREMENT_MAP[args.time_series] : undefined;
+
+  const result = await fetchBreakdownInsights({
+    campaign_id: args.campaign_id,
+    time_range: range,
+    breakdowns,
+    time_increment,
+    level: args.level ?? 'account',
+    limit: args.limit ?? 50,
+  });
+
+  const dimFields = args.breakdown ? DIMENSION_FIELDS[args.breakdown] : [];
+
+  const rows = result.data.map((row: any) => {
+    const m = computeMetrics(row as RawInsightRow);
+
+    // Build dimension labels
+    const dim: Record<string, any> = {};
+    for (const f of dimFields) {
+      if (row[f] != null) dim[f] = row[f];
+    }
+
+    // Time label when using time_series
+    if (time_increment != null && row.date_start) {
+      dim.date = time_increment === 1 ? row.date_start : `${row.date_start} to ${row.date_stop}`;
+    }
+
+    // Entity label for non-account levels
+    const entity = row.campaign_name ?? row.adset_name ?? row.ad_name ?? null;
+
+    return {
+      ...(entity && { entity }),
+      ...(Object.keys(dim).length > 0 && { dimension: dim }),
+      spend: m.spend,
+      impressions: m.impressions,
+      clicks: m.clicks,
+      ctr: m.ctr,
+      cpc: m.cpc,
+      cpm: m.cpm,
+      conversions: m.conversions,
+      cpa: m.cpa,
+      roas: m.roas,
+    };
+  });
+
+  return {
+    period: `${range.since} to ${range.until}`,
+    breakdown: args.breakdown ?? null,
+    time_series: args.time_series ?? null,
+    level: args.level ?? 'account',
+    rows,
+    ...(result.paging?.cursors?.after && { next_cursor: result.paging.cursors.after }),
+  };
 }
 
 async function getAccountIntelligence(args: any): Promise<any> {
