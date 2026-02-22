@@ -85,9 +85,12 @@ function extractVideoWatched(
 
 export function extractConversions(row: RawInsightRow): { count: number; value: number } {
   const purchaseTypes = ['purchase', 'offsite_conversion.fb_pixel_purchase', 'omni_purchase'];
+  const leadTypes = ['lead', 'onsite_conversion.lead_grouped', 'offsite_conversion.fb_pixel_lead', 'leadgen_grouped'];
+
   let count = 0;
   let value = 0;
 
+  // Try purchase actions first
   if (row.actions) {
     for (const a of row.actions) {
       if (purchaseTypes.includes(a.action_type)) count += num(a.value);
@@ -96,6 +99,13 @@ export function extractConversions(row: RawInsightRow): { count: number; value: 
   if (row.action_values) {
     for (const a of row.action_values) {
       if (purchaseTypes.includes(a.action_type)) value += num(a.value);
+    }
+  }
+
+  // Fall back to lead actions — covers OUTCOME_LEADS campaigns
+  if (count === 0 && row.actions) {
+    for (const a of row.actions) {
+      if (leadTypes.includes(a.action_type)) count += num(a.value);
     }
   }
 

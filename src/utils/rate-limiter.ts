@@ -54,19 +54,24 @@ export async function rateLimitedCall<T>(
       state.callSleepMs = Math.max(0, state.callSleepMs - 5000);
       return result;
     } catch (err: any) {
-      // Meta API rate limit error codes
-      if (err?.status === 429 || err?.error?.code === 32 || err?.error?.code === 4) {
-        const waitMs = Math.min(60_000, 5000 * Math.pow(2, attempt));
+      // Check headers on the error response if available (SDK errors)
+      if (err?.headers) parseUsageHeaders(err.headers);
+      if (err?.response?.headers) parseUsageHeaders(err.response.headers);
+
+      // Meta API rate limit error codes — check both SDK shape and direct fetch shape
+      const errCode =
+        err?.error?.code ??           // FB SDK
+        err?.response?.error?.code;   // direct fetch (duplicator, etc.)
+
+      const isRateLimit = err?.status === 429 || errCode === 4 || errCode === 17 || errCode === 32 || errCode === 613;
+
+      if (isRateLimit) {
+        const waitMs = Math.min(60_000, 5_000 * Math.pow(2, attempt));
         state.callSleepMs = waitMs;
         if (attempt < maxRetries) {
           await sleep(waitMs);
           continue;
         }
-      }
-
-      // Check headers on the error response if available
-      if (err?.headers) {
-        parseUsageHeaders(err.headers);
       }
 
       throw err;

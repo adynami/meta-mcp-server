@@ -180,6 +180,13 @@ async function createFromCustomerList(args: any): Promise<any> {
     return { success: false, error: 'Provide at least one email or phone number.' };
   }
 
+  if (config.dryRun) {
+    return {
+      dry_run: true,
+      message: `Simulated: create customer list audience "${args.name}" with ${emails.length} emails and ${phones.length} phones`,
+    };
+  }
+
   // Create the audience shell
   const audience = await createCustomAudience({
     name: args.name,
@@ -233,6 +240,13 @@ async function createFromCustomerList(args: any): Promise<any> {
 async function createLookalike(args: any): Promise<any> {
   const ratio = args.ratio ?? 0.01;
   const type = args.type ?? 'similarity';
+
+  if (config.dryRun) {
+    return {
+      dry_run: true,
+      message: `Simulated: create lookalike audience "${args.name}" from seed ${args.source_audience_id} — ${(ratio * 100).toFixed(0)}% of ${args.country}`,
+    };
+  }
 
   const result = await createCustomAudience({
     name: args.name,
@@ -302,6 +316,13 @@ function buildAudienceRule(pixelId: string, retentionSeconds: number, includeRul
 }
 
 async function createWebsiteAudience(args: any): Promise<any> {
+  if (config.dryRun) {
+    return {
+      dry_run: true,
+      message: `Simulated: create website audience "${args.name}" from pixel ${args.pixel_id}`,
+    };
+  }
+
   const retentionDays = args.retention_days ?? 30;
   const retentionSeconds = retentionDays * 86400;
   const includeRules: any[] = args.rules ?? [];

@@ -193,7 +193,7 @@ async function listCampaigns(args: any): Promise<any> {
   }
   if (args.after) params.after = args.after;
 
-  const fields = ['id', 'name', 'status', 'objective', 'daily_budget', 'lifetime_budget', 'buying_type'];
+  const fields = ['id', 'name', 'status', 'effective_status', 'objective', 'daily_budget', 'lifetime_budget', 'buying_type'];
   const raw = await fetchCampaigns(fields, params);
   const hasMore = raw.length > limit;
   const items = raw.slice(0, limit);
@@ -220,13 +220,13 @@ async function listCampaigns(args: any): Promise<any> {
 }
 
 async function getCampaignDetails(args: any): Promise<any> {
-  const fields = ['id', 'name', 'status', 'objective', 'daily_budget', 'lifetime_budget', 'buying_type', 'bid_strategy', 'created_time', 'start_time', 'stop_time'];
+  const fields = ['id', 'name', 'status', 'effective_status', 'objective', 'daily_budget', 'lifetime_budget', 'buying_type', 'bid_strategy', 'created_time', 'start_time', 'stop_time'];
   const c = await readCampaign(args.campaign_id, fields);
 
   return {
     id: c.id,
     name: c.name,
-    status: c.status,
+    status: c.effective_status ?? c.status,
     objective: c.objective,
     daily_budget: c.daily_budget ? `${(parseInt(c.daily_budget) / 100).toFixed(2)}` : null,
     lifetime_budget: c.lifetime_budget ? `${(parseInt(c.lifetime_budget) / 100).toFixed(2)}` : null,
@@ -252,7 +252,7 @@ async function listAdSets(args: any): Promise<any> {
     ];
   }
 
-  const fields = ['id', 'name', 'status', 'daily_budget', 'lifetime_budget', 'bid_strategy', 'optimization_goal', 'targeting'];
+  const fields = ['id', 'name', 'status', 'effective_status', 'daily_budget', 'lifetime_budget', 'bid_strategy', 'optimization_goal', 'targeting'];
   const raw = await fetchAdSets(fields, params);
 
   if (concise) {
@@ -293,7 +293,7 @@ async function listAds(args: any): Promise<any> {
   if (args.campaign_id) filtering.push({ field: 'campaign_id', operator: 'EQUAL', value: args.campaign_id });
   if (filtering.length) params.filtering = filtering;
 
-  const fields = ['id', 'name', 'status'];
+  const fields = ['id', 'name', 'status', 'effective_status'];
   const raw = await fetchAds(fields, params);
 
   return {

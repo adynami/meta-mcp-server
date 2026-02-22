@@ -212,7 +212,7 @@ export const creatorTools = [
           },
           required: ['body', 'link_url'],
         },
-        pixel_id: { type: 'string', description: 'Meta Pixel ID for conversion tracking. Required for OUTCOME_SALES and OUTCOME_LEADS. Default: 858047089973360' },
+        pixel_id: { type: 'string', description: 'Meta Pixel ID for conversion tracking. Required for OUTCOME_SALES and OUTCOME_LEADS. Use meta_list_pixels to find your pixel ID.' },
         use_advantage_audience: { type: 'boolean', description: 'Set to true to enable Meta Advantage+ audience targeting. Default: false.' },
         start_immediately: { type: 'boolean', description: 'true = ACTIVE, false = PAUSED (default: true)' },
       },
@@ -340,6 +340,9 @@ async function handleDeploy(args: any): Promise<any> {
   if (args.ad_schedule?.length && budgetType !== 'lifetime') {
     return { success: false, error: 'ad_schedule (dayparting) requires budget_type=lifetime. Meta only supports dayparting on lifetime budget campaigns.' };
   }
+  if ((args.objective === 'OUTCOME_SALES' || args.objective === 'OUTCOME_LEADS') && !args.pixel_id) {
+    return { success: false, error: `pixel_id is required for objective ${args.objective}. Use meta_list_pixels to find your pixel ID, then pass it as pixel_id.` };
+  }
 
   // Validate creative inputs
   const creativeType = (args.creative_type ?? 'image') as 'image' | 'video' | 'carousel';
@@ -464,15 +467,15 @@ async function handleDeploy(args: any): Promise<any> {
       };
     }
 
-    // OUTCOME_SALES requires a pixel + conversion event on the ad set
+    // OUTCOME_SALES / OUTCOME_LEADS require a pixel + conversion event on the ad set
     if (args.objective === 'OUTCOME_SALES') {
       adsetParams.promoted_object = {
-        pixel_id: args.pixel_id ?? '858047089973360',
+        pixel_id: args.pixel_id,
         custom_event_type: 'PURCHASE',
       };
     } else if (args.objective === 'OUTCOME_LEADS') {
       adsetParams.promoted_object = {
-        pixel_id: args.pixel_id ?? '858047089973360',
+        pixel_id: args.pixel_id,
         custom_event_type: 'LEAD',
       };
     }
