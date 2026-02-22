@@ -3,11 +3,22 @@ import * as path from 'node:path';
 import { config } from '../config.js';
 import {
   createCampaign, createAdSet, createAd,
-  uploadAdImage, deleteCampaign, deleteAdSet,
+  uploadAdImage, uploadAdVideo, deleteCampaign, deleteAdSet,
   getAccountContext,
 } from '../meta-client.js';
 
 export const creatorTools = [
+  {
+    name: 'meta_upload_video',
+    description: `Upload a local video file to the Meta ad account for use in video ads. Validates file type (mp4/mov/avi/mkv) and size (<4GB, but keep under 1GB for best results). Returns a video_id needed by meta_deploy_campaign when using creative_type=video. Meta processes the video asynchronously after upload — allow ~5 minutes before using it in an ad.`,
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        local_file_path: { type: 'string', description: 'Absolute path to the video file on disk' },
+      },
+      required: ['local_file_path'],
+    },
+  },
   {
     name: 'meta_upload_image',
     description: `Upload a local image file to the Meta ad account for use in ads. Use when the user wants to create an ad and has an image file ready. Validates file type (jpg/png/gif/webp), size (<30MB), and aspect ratio before uploading. Returns an image_hash needed by meta_deploy_campaign.`,
@@ -86,27 +97,55 @@ export const creatorTools = [
         },
 
         // --- Creative ---
-        image_hash: { type: 'string', description: 'Image hash from meta_upload_image' },
+        creative_type: {
+          type: 'string',
+          enum: ['image', 'video', 'carousel'],
+          description: 'image (default): single image ad using image_hash. video: single video ad using video_id. carousel: multi-card ad using cards array (2–10 cards).',
+        },
+        image_hash: { type: 'string', description: 'Image hash from meta_upload_image. Required for creative_type=image (default).' },
+        video_id: { type: 'string', description: 'Video ID from meta_upload_video. Required for creative_type=video.' },
+        cards: {
+          type: 'array',
+          description: 'Carousel cards. Required for creative_type=carousel. Minimum 2, maximum 10 cards.',
+          minItems: 2,
+          maxItems: 10,
+          items: {
+            type: 'object',
+            properties: {
+              image_hash: { type: 'string', description: 'Image hash for this card (from meta_upload_image)' },
+              headline: { type: 'string', description: 'Card headline (shown below the card image)' },
+              link_url: { type: 'string', description: 'Destination URL when this card is clicked' },
+              description: { type: 'string', description: 'Optional card description (shown below headline)' },
+              call_to_action: {
+                type: 'string',
+                enum: ['LEARN_MORE', 'SHOP_NOW', 'SIGN_UP', 'CONTACT_US', 'DOWNLOAD', 'GET_OFFER', 'GET_QUOTE', 'SUBSCRIBE', 'APPLY_NOW'],
+                description: 'CTA for this card (default: LEARN_MORE)',
+              },
+            },
+            required: ['image_hash', 'headline', 'link_url'],
+          },
+        },
         page_id: { type: 'string', description: 'Facebook Page ID to run ads from' },
         ad_copy: {
           type: 'object',
+          description: 'Ad copy for image and video creatives. Also used as the primary text (message) above the carousel.',
           properties: {
-            headline: { type: 'string', description: 'Ad headline (shown below image)' },
-            body: { type: 'string', description: 'Primary text (shown above image)' },
-            link_url: { type: 'string', description: 'Destination URL when ad is clicked' },
+            headline: { type: 'string', description: 'Ad headline (shown below image/video). Not used for carousel — each card has its own headline.' },
+            body: { type: 'string', description: 'Primary text (shown above the creative)' },
+            link_url: { type: 'string', description: 'Destination URL when ad is clicked. For carousel, used as the fallback/see-more URL.' },
             call_to_action: {
               type: 'string',
               enum: ['LEARN_MORE', 'SHOP_NOW', 'SIGN_UP', 'BOOK_TRAVEL', 'CONTACT_US', 'DOWNLOAD', 'GET_OFFER', 'GET_QUOTE', 'SUBSCRIBE', 'APPLY_NOW'],
               description: 'CTA button text (default: LEARN_MORE)',
             },
           },
-          required: ['headline', 'body', 'link_url'],
+          required: ['body', 'link_url'],
         },
         pixel_id: { type: 'string', description: 'Meta Pixel ID for conversion tracking. Required for OUTCOME_SALES and OUTCOME_LEADS. Default: 858047089973360' },
-        use_advantage_audience: { type: 'boolean', description: 'Set to true to enable Meta Advantage+ audience targeting. Set to false to use manual targeting spec. Default: false.' },
+        use_advantage_audience: { type: 'boolean', description: 'Set to true to enable Meta Advantage+ audience targeting. Default: false.' },
         start_immediately: { type: 'boolean', description: 'true = ACTIVE, false = PAUSED (default: true)' },
       },
-      required: ['campaign_name', 'objective', 'daily_budget', 'targeting', 'image_hash', 'page_id', 'ad_copy'],
+      required: ['campaign_name', 'objective', 'daily_budget', 'targeting', 'page_id', 'ad_copy'],
     },
   },
 ];
@@ -114,6 +153,7 @@ export const creatorTools = [
 export async function handleCreatorTool(name: string, args: any): Promise<any> {
   switch (name) {
     case 'meta_upload_image': return handleUpload(args);
+    case 'meta_upload_video': return handleVideoUpload(args);
     case 'meta_deploy_campaign': return handleDeploy(args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
@@ -162,6 +202,49 @@ async function handleUpload(args: any): Promise<any> {
   return { image_hash: result.hash, ...(dimensionWarning && { warning: dimensionWarning }) };
 }
 
+const ALLOWED_VIDEO_EXTENSIONS = ['.mp4', '.mov', '.avi', '.mkv', '.m4v', '.wmv'];
+const MAX_VIDEO_SIZE = 4 * 1024 * 1024 * 1024; // 4 GB
+
+async function handleVideoUpload(args: any): Promise<any> {
+  const filePath = args.local_file_path;
+
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`File not found: ${filePath}. Provide an absolute path to an existing video file.`);
+  }
+
+  const ext = path.extname(filePath).toLowerCase();
+  if (!ALLOWED_VIDEO_EXTENSIONS.includes(ext)) {
+    throw new Error(`Unsupported file type "${ext}". Use one of: ${ALLOWED_VIDEO_EXTENSIONS.join(', ')}`);
+  }
+
+  const stat = fs.statSync(filePath);
+  if (stat.size > MAX_VIDEO_SIZE) {
+    throw new Error(`File is ${(stat.size / 1024 / 1024 / 1024).toFixed(2)}GB, max is 4GB.`);
+  }
+  if (stat.size === 0) {
+    throw new Error('File is empty (0 bytes).');
+  }
+
+  const sizeWarning = stat.size > 1024 * 1024 * 1024
+    ? `File is ${(stat.size / 1024 / 1024 / 1024).toFixed(2)}GB — upload may take a while.`
+    : null;
+
+  if (config.dryRun) {
+    return {
+      dry_run: true,
+      message: `Simulated video upload: ${path.basename(filePath)} (${(stat.size / 1024 / 1024).toFixed(1)}MB)`,
+      ...(sizeWarning && { warning: sizeWarning }),
+    };
+  }
+
+  const result = await uploadAdVideo(filePath);
+  return {
+    video_id: result.video_id,
+    note: 'Meta processes videos asynchronously. Allow ~5 minutes before using in an ad.',
+    ...(sizeWarning && { warning: sizeWarning }),
+  };
+}
+
 async function handleDeploy(args: any): Promise<any> {
   const account = await getAccountContext();
   const budgetCents = Math.round(args.daily_budget * 100);
@@ -184,12 +267,30 @@ async function handleDeploy(args: any): Promise<any> {
     return { success: false, error: 'end_time is required when budget_type is lifetime. Provide an ISO 8601 datetime (e.g. 2025-12-31T23:59:59Z).' };
   }
 
+  // Validate creative inputs
+  const creativeType = (args.creative_type ?? 'image') as 'image' | 'video' | 'carousel';
+  if (creativeType === 'image' && !args.image_hash) {
+    return { success: false, error: 'image_hash is required for creative_type=image (default). Get one from meta_upload_image.' };
+  }
+  if (creativeType === 'video' && !args.video_id) {
+    return { success: false, error: 'video_id is required for creative_type=video. Get one from meta_upload_video.' };
+  }
+  if (creativeType === 'carousel') {
+    if (!args.cards?.length || args.cards.length < 2) {
+      return { success: false, error: 'carousel requires at least 2 cards. Provide a cards array with image_hash, headline, and link_url for each card.' };
+    }
+    if (args.cards.length > 10) {
+      return { success: false, error: 'carousel supports a maximum of 10 cards.' };
+    }
+  }
+
   if (config.dryRun) {
     return {
       dry_run: true,
       message: 'Simulated deployment',
       campaign_name: args.campaign_name,
       objective: args.objective,
+      creative_type: creativeType,
       budget_level: budgetLevel,
       budget_type: budgetType,
       budget: `${account.currency} ${args.daily_budget}${budgetType === 'daily' ? '/day' : ' lifetime'}`,
@@ -280,22 +381,12 @@ async function handleDeploy(args: any): Promise<any> {
     adsetId = adsetResult.id;
     steps.push(`Ad Set ${adsetId}`);
 
+    const objectStorySpec = buildObjectStorySpec(creativeType, args);
     const adResult = await createAd({
       adset_id: adsetId,
       name: `${args.campaign_name} - Ad`,
       status,
-      creative: {
-        object_story_spec: {
-          page_id: args.page_id,
-          link_data: {
-            image_hash: args.image_hash,
-            link: args.ad_copy.link_url,
-            message: args.ad_copy.body,
-            name: args.ad_copy.headline,
-            call_to_action: { type: args.ad_copy.call_to_action ?? 'LEARN_MORE' },
-          },
-        },
-      },
+      creative: { object_story_spec: objectStorySpec },
     });
 
     return {
@@ -304,6 +395,7 @@ async function handleDeploy(args: any): Promise<any> {
       adset_id: adsetId,
       ad_id: adResult.id,
       status,
+      creative_type: creativeType,
       budget_level: budgetLevel,
       budget: `${account.currency} ${args.daily_budget}${budgetType === 'daily' ? '/day' : ' lifetime'}`,
       bid_strategy: bidStrategy,
@@ -355,6 +447,54 @@ async function handleDeploy(args: any): Promise<any> {
       ...(rollbackErrors.length && { rollback_errors: rollbackErrors }),
     };
   }
+}
+
+function buildObjectStorySpec(creativeType: 'image' | 'video' | 'carousel', args: any): Record<string, any> {
+  const cta = args.ad_copy.call_to_action ?? 'LEARN_MORE';
+
+  if (creativeType === 'video') {
+    return {
+      page_id: args.page_id,
+      video_data: {
+        video_id: args.video_id,
+        message: args.ad_copy.body,
+        title: args.ad_copy.headline ?? '',
+        call_to_action: {
+          type: cta,
+          value: { link: args.ad_copy.link_url },
+        },
+      },
+    };
+  }
+
+  if (creativeType === 'carousel') {
+    return {
+      page_id: args.page_id,
+      link_data: {
+        message: args.ad_copy.body,
+        link: args.ad_copy.link_url,
+        child_attachments: args.cards.map((card: any) => ({
+          link: card.link_url,
+          name: card.headline,
+          ...(card.description && { description: card.description }),
+          image_hash: card.image_hash,
+          call_to_action: { type: card.call_to_action ?? 'LEARN_MORE' },
+        })),
+      },
+    };
+  }
+
+  // Default: image
+  return {
+    page_id: args.page_id,
+    link_data: {
+      image_hash: args.image_hash,
+      link: args.ad_copy.link_url,
+      message: args.ad_copy.body,
+      name: args.ad_copy.headline ?? '',
+      call_to_action: { type: cta },
+    },
+  };
 }
 
 function objectiveToOptimization(objective: string): string {

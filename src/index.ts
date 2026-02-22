@@ -12,6 +12,9 @@ import { analystTools, handleAnalystTool } from './tools/analyst.js';
 import { creatorTools, handleCreatorTool } from './tools/creator.js';
 import { debugTools, handleDebugTool } from './tools/debug.js';
 import { duplicatorTools, handleDuplicatorTool } from './tools/duplicator.js';
+import { audienceTools, handleAudienceTool } from './tools/audience.js';
+import { updaterTools, handleUpdaterTool } from './tools/updater.js';
+import { pixelTools, handlePixelTool } from './tools/pixels.js';
 
 const ALL_TOOLS = [
   ...managementTools,
@@ -19,6 +22,9 @@ const ALL_TOOLS = [
   ...creatorTools,
   ...debugTools,
   ...duplicatorTools,
+  ...audienceTools,
+  ...updaterTools,
+  ...pixelTools,
 ];
 
 const managementToolNames = new Set(managementTools.map(t => t.name));
@@ -26,6 +32,9 @@ const analystToolNames = new Set(analystTools.map(t => t.name));
 const creatorToolNames = new Set(creatorTools.map(t => t.name));
 const debugToolNames = new Set(debugTools.map(t => t.name));
 const duplicatorToolNames = new Set(duplicatorTools.map(t => t.name));
+const audienceToolNames = new Set(audienceTools.map(t => t.name));
+const updaterToolNames = new Set(updaterTools.map(t => t.name));
+const pixelToolNames = new Set(pixelTools.map(t => t.name));
 
 const server = new Server(
   { name: 'meta-marketing-mcp', version: '1.1.0' },
@@ -52,6 +61,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       result = await handleDebugTool(name, args ?? {});
     } else if (duplicatorToolNames.has(name)) {
       result = await handleDuplicatorTool(name, args ?? {});
+    } else if (audienceToolNames.has(name)) {
+      result = await handleAudienceTool(name, args ?? {});
+    } else if (updaterToolNames.has(name)) {
+      result = await handleUpdaterTool(name, args ?? {});
+    } else if (pixelToolNames.has(name)) {
+      result = await handlePixelTool(name, args ?? {});
     } else {
       return {
         content: [{ type: 'text', text: `Unknown tool "${name}". Available: ${ALL_TOOLS.map(t => t.name).join(', ')}` }],
