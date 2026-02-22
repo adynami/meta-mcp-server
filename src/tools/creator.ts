@@ -47,7 +47,7 @@ export const creatorTools = [
         budget_level: {
           type: 'string',
           enum: ['CBO', 'ABO'],
-          description: 'CBO (default) = Advantage Campaign Budget — Meta allocates one campaign-level budget across ad sets automatically. ABO = Ad Set Budget — you control budget per ad set manually. Use CBO for scaling, ABO for testing.',
+          description: 'CBO = Advantage Campaign Budget — Meta auto-allocates one campaign-level budget across ad sets (best for scaling). ABO = Ad Set Budget — you control budget per ad set manually (best for controlled testing). Always ask the user which they prefer if not specified. Default: CBO.',
         },
         budget_type: {
           type: 'string',
@@ -115,12 +115,12 @@ export const creatorTools = [
             },
             placements: {
               type: 'object',
-              description: 'Manual placement control. Omit to use Advantage+ Placements (Meta auto-selects — recommended). Provide to restrict to specific placements.',
+              description: 'Manual placement control. Omit to use Advantage+ Placements (Meta auto-selects best placements — recommended for most campaigns). If the user has not specified placements, ask whether they want Advantage+ Placements (auto) or manual placement control before deploying.',
               properties: {
                 publisher_platforms: {
                   type: 'array',
-                  items: { type: 'string', enum: ['facebook', 'instagram', 'audience_network', 'messenger'] },
-                  description: 'Platforms to run on (default: all)',
+                  items: { type: 'string', enum: ['facebook', 'instagram', 'audience_network', 'messenger', 'threads'] },
+                  description: 'Platforms to run on. Include "threads" for Threads feed placement (requires 4:5 or 1:1 aspect ratio images).',
                 },
                 facebook_positions: {
                   type: 'array',
@@ -141,6 +141,11 @@ export const creatorTools = [
                   type: 'array',
                   items: { type: 'string', enum: ['messenger_home', 'story'] },
                   description: 'Messenger placements',
+                },
+                threads_positions: {
+                  type: 'array',
+                  items: { type: 'string', enum: ['feed'] },
+                  description: 'Threads placements. Requires publisher_platforms to include "threads". Use 4:5 or 1:1 image aspect ratio for best results.',
                 },
               },
             },
@@ -213,10 +218,89 @@ export const creatorTools = [
           required: ['body', 'link_url'],
         },
         pixel_id: { type: 'string', description: 'Meta Pixel ID for conversion tracking. Required for OUTCOME_SALES and OUTCOME_LEADS. Use meta_list_pixels to find your pixel ID.' },
-        use_advantage_audience: { type: 'boolean', description: 'Set to true to enable Meta Advantage+ audience targeting. Default: false.' },
+        use_advantage_audience: { type: 'boolean', description: 'Enable Meta Advantage+ audience targeting — Meta expands your defined audience when it predicts better results. Always ask the user whether they want to enable this before deploying; it can significantly change who sees the ads. Default: false.' },
         start_immediately: { type: 'boolean', description: 'true = ACTIVE, false = PAUSED (default: true)' },
       },
       required: ['campaign_name', 'objective', 'daily_budget', 'targeting', 'page_id', 'ad_copy'],
+    },
+  },
+  {
+    name: 'meta_deploy_dco_campaign',
+    description: `Create a Dynamic Creative Optimization (DCO) campaign. Meta automatically tests all combinations of your images, headlines, and body texts and delivers the best-performing mix to each user.
+
+Best for:
+- Testing creative variants without creating separate campaigns
+- Finding the winning image/copy combination faster
+- Maximizing performance with limited budget
+
+IMPORTANT — always confirm with the user before calling:
+1. Which images to test? (provide 2–10 image hashes from meta_upload_image — each will be tested)
+2. Which headlines to test? (2–5 variations)
+3. Which body texts to test? (2–5 variations)
+4. Campaign objective and budget?
+5. Which Facebook Page to run from?
+6. Destination URL?
+
+This is a write operation — confirm all details before calling.`,
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        campaign_name: { type: 'string', description: 'Display name for the campaign' },
+        objective: {
+          type: 'string',
+          enum: ['OUTCOME_AWARENESS', 'OUTCOME_ENGAGEMENT', 'OUTCOME_LEADS', 'OUTCOME_SALES', 'OUTCOME_TRAFFIC'],
+          description: 'Campaign objective. Ask the user if not specified.',
+        },
+        daily_budget: { type: 'number', minimum: 1, description: 'Daily budget in major currency units (e.g. 50 for $50)' },
+        image_hashes: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 2,
+          maxItems: 10,
+          description: 'Image hashes from meta_upload_image. Provide 2–10 images to test. Meta will test each one.',
+        },
+        headlines: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 2,
+          maxItems: 5,
+          description: 'Headline variations to test. Provide 2–5 options.',
+        },
+        bodies: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 2,
+          maxItems: 5,
+          description: 'Body text (primary text) variations to test. Provide 2–5 options.',
+        },
+        link_url: { type: 'string', description: 'Destination URL for all creative combinations' },
+        call_to_action: {
+          type: 'string',
+          enum: ['LEARN_MORE', 'SHOP_NOW', 'SIGN_UP', 'CONTACT_US', 'DOWNLOAD', 'GET_OFFER', 'GET_QUOTE', 'SUBSCRIBE', 'APPLY_NOW'],
+          description: 'CTA button text (default: LEARN_MORE)',
+        },
+        page_id: { type: 'string', description: 'Facebook Page ID to run ads from' },
+        targeting: {
+          type: 'object',
+          description: 'Audience targeting. Same structure as meta_deploy_campaign targeting.',
+          properties: {
+            age_min: { type: 'number', minimum: 18, maximum: 65 },
+            age_max: { type: 'number', minimum: 18, maximum: 65 },
+            genders: { type: 'array', items: { type: 'number', enum: [0, 1, 2] } },
+            geo_locations: {
+              type: 'object',
+              properties: { countries: { type: 'array', items: { type: 'string' } } },
+            },
+            custom_audiences: {
+              type: 'array',
+              items: { type: 'object', properties: { id: { type: 'string' } } },
+            },
+          },
+        },
+        pixel_id: { type: 'string', description: 'Pixel ID for conversion tracking. Required for OUTCOME_SALES and OUTCOME_LEADS.' },
+        start_immediately: { type: 'boolean', description: 'true = ACTIVE, false = PAUSED (default: true)' },
+      },
+      required: ['campaign_name', 'objective', 'daily_budget', 'image_hashes', 'headlines', 'bodies', 'link_url', 'page_id', 'targeting'],
     },
   },
 ];
@@ -226,6 +310,7 @@ export async function handleCreatorTool(name: string, args: any): Promise<any> {
     case 'meta_upload_image': return handleUpload(args);
     case 'meta_upload_video': return handleVideoUpload(args);
     case 'meta_deploy_campaign': return handleDeploy(args);
+    case 'meta_deploy_dco_campaign': return handleDeployDco(args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
 }
@@ -430,6 +515,7 @@ async function handleDeploy(args: any): Promise<any> {
       if (p.instagram_positions?.length) targeting.instagram_positions = p.instagram_positions;
       if (p.audience_network_positions?.length) targeting.audience_network_positions = p.audience_network_positions;
       if (p.messenger_positions?.length) targeting.messenger_positions = p.messenger_positions;
+      if (p.threads_positions?.length) targeting.threads_positions = p.threads_positions;
     }
 
     // --- Ad set params ---
@@ -610,4 +696,125 @@ function objectiveToOptimization(objective: string): string {
     OUTCOME_APP_PROMOTION: 'APP_INSTALLS',
   };
   return map[objective] ?? 'LINK_CLICKS';
+}
+
+// ── DCO Campaign ──
+
+async function handleDeployDco(args: any): Promise<any> {
+  const { image_hashes, headlines, bodies, link_url, page_id } = args;
+
+  // Validate inputs
+  if (!image_hashes?.length || image_hashes.length < 2) {
+    return { success: false, error: 'Provide at least 2 image_hashes for DCO. Ask the user which images to test.' };
+  }
+  if (!headlines?.length || headlines.length < 2) {
+    return { success: false, error: 'Provide at least 2 headlines for DCO. Ask the user which headline variations to test.' };
+  }
+  if (!bodies?.length || bodies.length < 2) {
+    return { success: false, error: 'Provide at least 2 body texts for DCO. Ask the user which body text variations to test.' };
+  }
+  if ((args.objective === 'OUTCOME_SALES' || args.objective === 'OUTCOME_LEADS') && !args.pixel_id) {
+    return { success: false, error: `pixel_id is required for objective ${args.objective}. Use meta_list_pixels to find your pixel ID.` };
+  }
+
+  const status = args.start_immediately === false ? 'PAUSED' : 'ACTIVE';
+  const budgetCents = Math.round(args.daily_budget * 100);
+  const cta = args.call_to_action ?? 'LEARN_MORE';
+
+  if (config.dryRun) {
+    return {
+      dry_run: true,
+      message: `Simulated DCO campaign: "${args.campaign_name}" with ${image_hashes.length} images × ${headlines.length} headlines × ${bodies.length} bodies = ${image_hashes.length * headlines.length * bodies.length} combinations`,
+    };
+  }
+
+  const account = await getAccountContext();
+  let campaignId: string | null = null;
+  let adsetId: string | null = null;
+
+  try {
+    // Campaign
+    const campaignResult = await createCampaign({
+      name: args.campaign_name,
+      objective: args.objective,
+      status,
+      special_ad_categories: [],
+      daily_budget: budgetCents.toString(),
+      bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
+    });
+    campaignId = campaignResult.id;
+
+    // Build targeting
+    const t = args.targeting;
+    const targeting: Record<string, any> = {
+      age_min: t?.age_min ?? 18,
+      age_max: t?.age_max ?? 65,
+      genders: t?.genders ?? [0],
+      geo_locations: { countries: t?.geo_locations?.countries ?? ['US'], location_types: ['home', 'recent'] },
+      targeting_automation: { advantage_audience: 0 },
+    };
+    if (t?.custom_audiences?.length) targeting.custom_audiences = t.custom_audiences.map((a: any) => ({ id: a.id }));
+
+    // Ad set with is_dynamic_creative: true
+    const adsetResult = await createAdSet({
+      campaign_id: campaignId,
+      name: `${args.campaign_name} - DCO Ad Set`,
+      billing_event: 'IMPRESSIONS',
+      optimization_goal: objectiveToOptimization(args.objective),
+      targeting,
+      status,
+      is_dynamic_creative: true,
+      is_adset_budget_sharing_enabled: true,
+      ...(args.objective === 'OUTCOME_SALES' && { promoted_object: { pixel_id: args.pixel_id, custom_event_type: 'PURCHASE' } }),
+      ...(args.objective === 'OUTCOME_LEADS' && { promoted_object: { pixel_id: args.pixel_id, custom_event_type: 'LEAD' } }),
+    });
+    adsetId = adsetResult.id;
+
+    // Build asset_feed_spec
+    const asset_feed_spec = {
+      images: image_hashes.map((hash: string) => ({ hash })),
+      titles: headlines.map((text: string) => ({ text })),
+      bodies: bodies.map((text: string) => ({ text })),
+      link_urls: [{ website_url: link_url, display_url: link_url.replace(/^https?:\/\//, '').split('/')[0] }],
+      call_to_action_types: [cta],
+      ad_formats: ['SINGLE_IMAGE'],
+    };
+
+    const adResult = await createAd({
+      adset_id: adsetId,
+      name: `${args.campaign_name} - DCO Ad`,
+      status,
+      creative: {
+        object_story_spec: { page_id },
+        asset_feed_spec,
+        degrees_of_freedom_spec: {
+          creative_features_spec: { standard_enhancements: { enroll_status: 'OPT_OUT' } },
+        },
+      },
+    });
+
+    return {
+      success: true,
+      campaign_id: campaignId,
+      adset_id: adsetId,
+      ad_id: adResult.id,
+      status,
+      combinations: image_hashes.length * headlines.length * bodies.length,
+      images_count: image_hashes.length,
+      headlines_count: headlines.length,
+      bodies_count: bodies.length,
+      budget: `${account.currency} ${args.daily_budget}/day`,
+      note: 'Meta will automatically test all creative combinations and optimize delivery toward the best performers.',
+    };
+  } catch (error: any) {
+    if (adsetId) { try { await deleteAdSet(adsetId); } catch { /**/ } }
+    if (campaignId) { try { await deleteCampaign(campaignId); } catch { /**/ } }
+
+    const fbErr = error?.response?.error ?? error?.error ?? null;
+    const errorDetail = fbErr
+      ? `[Meta API ${fbErr.code ?? '?'}] ${fbErr.error_user_title ?? fbErr.message ?? 'Unknown'}${fbErr.error_user_msg ? ` — ${fbErr.error_user_msg}` : ''}`
+      : error?.message ?? String(error);
+
+    return { success: false, error: errorDetail, rolled_back: true };
+  }
 }

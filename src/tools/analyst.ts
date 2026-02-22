@@ -1,5 +1,8 @@
 import { config } from '../config.js';
-import { fetchAccountInsights, fetchInsightsBreakdown, fetchBreakdownInsights, getAccountContext } from '../meta-client.js';
+import {
+  fetchAccountInsights, fetchInsightsBreakdown, fetchBreakdownInsights, getAccountContext,
+  startAsyncInsights, pollInsightsReport, fetchInsightsReport,
+} from '../meta-client.js';
 import { resolveRange, resolvePreviousPeriod, type TimeRangeKey } from '../utils/date-ranges.js';
 import { computeMetrics, pctChange, type RawInsightRow, type ComputedMetrics } from '../utils/metrics.js';
 
@@ -44,6 +47,44 @@ export const analystTools = [
     },
   },
   {
+    name: 'meta_request_insights_report',
+    description: `Run a deep insights report asynchronously. Use when you need large date ranges (90+ days), many rows, or cross-breakdown analysis that would time out with the synchronous meta_get_breakdown_insights. The report starts a background job, polls until complete, and returns all results.
+
+Best for:
+- Date ranges > 30 days
+- High-granularity breakdowns (placement × device × country)
+- Exporting large campaigns with 100+ ad sets or ads
+- Time series over long periods (daily data for last 90 days)
+
+If the user hasn't specified what breakdown or date range they want, ask them before running — this job can take 1–3 minutes.`,
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        time_range: {
+          type: 'string',
+          enum: ['last_7d', 'last_14d', 'last_30d', 'last_60d', 'last_90d', 'this_month', 'last_month', 'this_quarter', 'last_year'],
+          description: 'Analysis period. Supports longer ranges than the synchronous tool (default: last_30d)',
+        },
+        breakdown: {
+          type: 'string',
+          enum: ['age', 'gender', 'age_gender', 'country', 'platform', 'placement', 'device'],
+          description: 'Dimension to break results down by. Ask the user if not specified.',
+        },
+        time_series: {
+          type: 'string',
+          enum: ['daily', 'weekly', 'monthly'],
+          description: 'Add a time dimension (daily/weekly/monthly rows). Ask the user if not specified.',
+        },
+        campaign_id: { type: 'string', description: 'Restrict to a specific campaign' },
+        level: {
+          type: 'string',
+          enum: ['account', 'campaign', 'adset', 'ad'],
+          description: 'Aggregation level (default: account)',
+        },
+      },
+    },
+  },
+  {
     name: 'meta_account_intelligence',
     description: `Generate a high-density intelligence report for the ad account. Use this when the user asks "how are my ads doing?", wants a performance overview, or needs to identify problems.
 
@@ -74,6 +115,7 @@ Use response_format="concise" if you only need the summary text. Use "detailed" 
 export async function handleAnalystTool(name: string, args: any): Promise<any> {
   if (name === 'meta_account_intelligence') return getAccountIntelligence(args);
   if (name === 'meta_get_breakdown_insights') return getBreakdownInsights(args);
+  if (name === 'meta_request_insights_report') return requestAsyncInsightsReport(args);
   throw new Error(`Unknown tool: ${name}`);
 }
 
@@ -259,6 +301,99 @@ function buildSummaryText(
   }
 
   return lines.join('\n');
+}
+
+function resolveAsyncRange(key: string): { since: string; until: string } {
+  const now = new Date();
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+
+  const daysAgo = (n: number) => {
+    const d = new Date(now);
+    d.setDate(d.getDate() - n);
+    return d;
+  };
+
+  if (key === 'last_60d') return { since: fmt(daysAgo(60)), until: fmt(daysAgo(1)) };
+  if (key === 'last_90d') return { since: fmt(daysAgo(90)), until: fmt(daysAgo(1)) };
+  if (key === 'this_quarter') {
+    const qStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
+    return { since: fmt(qStart), until: fmt(now) };
+  }
+  if (key === 'last_year') {
+    return { since: `${now.getFullYear() - 1}-01-01`, until: `${now.getFullYear() - 1}-12-31` };
+  }
+  // Fall back to resolveRange for supported standard keys
+  return resolveRange(key as TimeRangeKey);
+}
+
+async function requestAsyncInsightsReport(args: any): Promise<any> {
+  const rangeKey = args.time_range ?? 'last_30d';
+  // Use resolveRange for standard keys, resolveAsyncRange for extended keys
+  const extendedKeys = ['last_60d', 'last_90d', 'this_quarter', 'last_year'];
+  const range = extendedKeys.includes(rangeKey)
+    ? resolveAsyncRange(rangeKey)
+    : resolveRange(rangeKey as TimeRangeKey);
+
+  const breakdowns = args.breakdown ? BREAKDOWN_MAP[args.breakdown] : undefined;
+  const time_increment = args.time_series ? TIME_INCREMENT_MAP[args.time_series] : undefined;
+
+  // Start the async job
+  const reportRunId = await startAsyncInsights({
+    campaign_id: args.campaign_id,
+    time_range: range,
+    breakdowns,
+    time_increment,
+    level: args.level ?? 'account',
+  });
+
+  // Poll until complete
+  await pollInsightsReport(reportRunId);
+
+  // Collect all pages
+  const allRows: any[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await fetchInsightsReport(reportRunId, cursor);
+    allRows.push(...page.data);
+    cursor = page.paging?.cursors?.after && page.paging?.next ? page.paging.cursors.after : undefined;
+  } while (cursor);
+
+  const dimFields = args.breakdown ? DIMENSION_FIELDS[args.breakdown] : [];
+
+  const rows = allRows.map((row: any) => {
+    const m = computeMetrics(row as RawInsightRow);
+    const dim: Record<string, any> = {};
+    for (const f of dimFields) {
+      if (row[f] != null) dim[f] = row[f];
+    }
+    if (time_increment != null && row.date_start) {
+      dim.date = time_increment === 1 ? row.date_start : `${row.date_start} to ${row.date_stop}`;
+    }
+    const entity = row.campaign_name ?? row.adset_name ?? row.ad_name ?? null;
+    return {
+      ...(entity && { entity }),
+      ...(Object.keys(dim).length > 0 && { dimension: dim }),
+      spend: m.spend,
+      impressions: m.impressions,
+      clicks: m.clicks,
+      ctr: m.ctr,
+      cpc: m.cpc,
+      cpm: m.cpm,
+      conversions: m.conversions,
+      cpa: m.cpa,
+      roas: m.roas,
+      ...(m.video && { video: m.video }),
+    };
+  });
+
+  return {
+    period: `${range.since} to ${range.until}`,
+    breakdown: args.breakdown ?? null,
+    time_series: args.time_series ?? null,
+    level: args.level ?? 'account',
+    total_rows: rows.length,
+    rows,
+  };
 }
 
 function zeroMetrics(): ComputedMetrics {
