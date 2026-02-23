@@ -2,9 +2,33 @@
 
 Meta Marketing API v25.0 via MCP. All write operations respect `DRY_RUN` mode (simulated responses, no API calls).
 
+**65 tools** across 14 categories.
+
 ---
 
-## Read / Query Tools
+## Table of Contents
+
+- [Account & Billing](#account--billing)
+- [Campaigns & Ad Sets](#campaigns--ad-sets)
+- [Analytics & Insights](#analytics--insights)
+- [Targeting Research](#targeting-research)
+- [Campaign Creation](#campaign-creation)
+- [Duplication](#duplication)
+- [Updates](#updates)
+- [Custom Audiences](#custom-audiences)
+- [Automated Rules](#automated-rules)
+- [Lead Generation](#lead-generation)
+- [Conversions API](#conversions-api-capi)
+- [Product Catalogs (DPA)](#product-catalogs-dpa)
+- [A/B Testing](#ab-testing)
+- [Pixels](#pixels)
+- [Creative Library & Ads Library](#creative-library--ads-library)
+- [Debug](#debug)
+- [Architecture Notes](#architecture-notes)
+
+---
+
+## Account & Billing
 
 ### `meta_get_account`
 Get ad account metadata: name, currency, timezone, and account status.
@@ -14,6 +38,28 @@ Get ad account metadata: name, currency, timezone, and account status.
 Returns: `{ id, name, currency, timezone, status, disable_reason }`
 
 ---
+
+### `meta_get_account_billing`
+Get billing and spend information for the ad account.
+
+**No parameters required.**
+
+Returns: `{ currency, amount_spent, spend_cap, remaining, balance, funding_source }`
+
+---
+
+### `meta_get_recommendations`
+Get Meta's automated optimization recommendations (e.g. enable Advantage+ audience, fix rejected ads, increase budget on winners).
+
+| Parameter | Type | Default |
+|---|---|---|
+| `limit` | number | 10 |
+
+Returns: `{ recommendations: [{ title, message, importance, confidence, blame_field }], total }`
+
+---
+
+## Campaigns & Ad Sets
 
 ### `meta_list_campaigns`
 List campaigns with name, status, objective, and budget.
@@ -63,12 +109,97 @@ List ads, optionally filtered by ad set or campaign.
 
 ---
 
+### `meta_get_ad_details`
+Full details for a single ad including creative spec, bid, and parent IDs.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `ad_id` | string | Yes |
+
+---
+
+### `meta_get_adset_details`
+Full details for a single ad set: targeting spec, budget, bid strategy, optimization goal, schedule, and promoted object.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `adset_id` | string | Yes |
+
+---
+
+### `meta_get_creative_details`
+Full creative spec (object_story_spec, asset_feed_spec for DCO) for an ad creative.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `creative_id` | string | Yes |
+
+---
+
+### `meta_get_ad_preview`
+Generate a shareable preview URL and iframe snippet for an ad in any format.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `ad_id` | string | Required |
+| `ad_format` | string | `DESKTOP_FEED_STANDARD` |
+
+Formats: `DESKTOP_FEED_STANDARD` · `MOBILE_FEED_STANDARD` · `INSTAGRAM_STANDARD` · `INSTAGRAM_STORY` · `FACEBOOK_STORY_MOBILE` · `MARKETPLACE_MOBILE` · `MESSENGER_MOBILE_INBOX_MEDIA`
+
+Returns: `{ ad_id, format, iframe_snippet, shareable_link }`
+
+---
+
+### `meta_list_pages`
+List Facebook Pages connected to the access token.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `limit` | number | 25 |
+
+---
+
+### `meta_predict_reach`
+Model the daily reach curve at a given budget before spending. Returns lower/upper bound reach and MAU.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `targeting` | object | Yes |
+| `daily_budget_usd` | number | No |
+| `optimization_goal` | string | No |
+
+---
+
+### `meta_update_campaign_status`
+Change a campaign to ACTIVE, PAUSED, or ARCHIVED.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `campaign_id` | string | Yes |
+| `status` | string | Yes — `ACTIVE`, `PAUSED`, `ARCHIVED` |
+
+---
+
+### `meta_bulk_update_status`
+Update the status of multiple campaigns, ad sets, or ads in one call.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `ids` | string[] | Yes (1–50 IDs) |
+| `status` | string | Yes — `ACTIVE`, `PAUSED`, `ARCHIVED` |
+
+---
+
+## Analytics & Insights
+
 ### `meta_get_insights`
 Performance metrics with all key ratios pre-calculated server-side.
 
 | Parameter | Type | Default | Notes |
 |---|---|---|---|
-| `time_range` | string | `last_7d` | `today`, `yesterday`, `last_3d`, `last_7d`, `last_14d`, `last_30d`, `last_90d`, `this_month`, `last_month` |
+| `time_range` | string | `last_7d` | `today`, `yesterday`, `last_3d`, `last_7d`, `last_14d`, `last_30d`, `last_90d`, `this_month`, `last_month`, `custom` |
+| `since` | string | — | `YYYY-MM-DD` — required when `time_range=custom` |
+| `until` | string | — | `YYYY-MM-DD` — required when `time_range=custom` |
 | `campaign_id` | string | — | Restrict to one campaign |
 | `level` | string | `account` | `account`, `campaign`, `adset`, `ad` |
 | `limit` | number | 5 | For non-account levels |
@@ -93,6 +224,39 @@ Returns a pre-built text summary with:
 
 ---
 
+### `meta_get_breakdown_insights`
+Metrics broken down by a dimension (age, gender, country, platform, placement, device) and/or a time series (daily, weekly, monthly).
+
+| Parameter | Type | Default | Notes |
+|---|---|---|---|
+| `time_range` | string | `last_7d` | |
+| `breakdown` | string | — | `age`, `gender`, `age_gender`, `country`, `platform`, `placement`, `device` |
+| `time_series` | string | — | `daily`, `weekly`, `monthly` — can combine with breakdown |
+| `campaign_id` | string | — | Restrict to one campaign |
+| `level` | string | `account` | `account`, `campaign`, `adset`, `ad` |
+| `limit` | number | 50 | Max 200 |
+| `attribution_window` | string | — | `1d_click`, `7d_click`, `28d_click`, `1d_view`, `7d_view`, `7d_click_1d_view` |
+
+---
+
+### `meta_request_insights_report`
+Asynchronous deep report for large date ranges (60–365 days), high-granularity breakdowns, or many rows. Polls until complete.
+
+| Parameter | Type | Default | Notes |
+|---|---|---|---|
+| `time_range` | string | `last_30d` | Also supports `last_60d`, `last_90d`, `this_quarter`, `last_year` |
+| `breakdown` | string | — | Same options as `meta_get_breakdown_insights` |
+| `time_series` | string | — | `daily`, `weekly`, `monthly` |
+| `campaign_id` | string | — | |
+| `level` | string | `account` | |
+| `attribution_window` | string | — | |
+
+Use when: date ranges > 30 days, placement × device × country breakdowns, 100+ campaigns.
+
+---
+
+## Debug
+
 ### `meta_debug_ad`
 Diagnose why an ad is not delivering or underperforming. Checks the full hierarchy (ad → ad set → campaign).
 
@@ -111,7 +275,86 @@ Returns: `{ ad, status, health: HEALTHY|NEEDS_ATTENTION|CRITICAL, issues[], perf
 
 ---
 
-## Write Tools
+## Targeting Research
+
+### `meta_search_targeting`
+Search for interest or behavior targeting options by keyword (legacy combined endpoint).
+
+| Parameter | Type | Required |
+|---|---|---|
+| `type` | string | Yes — `interest` or `behavior` |
+| `query` | string | Yes |
+
+---
+
+### `meta_search_interests`
+Search Facebook interest targeting options with audience size estimates.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `query` | string | Required |
+| `limit` | number | 25 |
+
+Returns: `[{ id, name, audience_size_lower_bound, audience_size_upper_bound, path }]`
+
+---
+
+### `meta_search_behaviors`
+Search behavior targeting options (purchase patterns, device usage, travel habits).
+
+| Parameter | Type | Default |
+|---|---|---|
+| `query` | string | Required |
+| `limit` | number | 25 |
+
+---
+
+### `meta_search_demographics`
+Search demographic targeting options: life events, industries, income, device/OS, generation, parental status, and more.
+
+| Parameter | Type | Required | Notes |
+|---|---|---|---|
+| `class` | string | Yes | `life_events`, `industries`, `income`, `user_device`, `user_os`, `generation`, `household_composition`, `parents`, `politics`, `relationship_statuses`, `work_employers`, `work_positions` |
+| `query` | string | No | Filter keyword within the class |
+| `limit` | number | No | Default: 25 |
+
+---
+
+### `meta_search_geo_locations`
+Search geographic targeting options (countries, regions, cities, zip codes).
+
+| Parameter | Type | Default |
+|---|---|---|
+| `query` | string | Required |
+| `location_types` | string[] | all types |
+| `limit` | number | 25 |
+
+`location_types` options: `country`, `region`, `city`, `zip`, `geo_market`, `electoral_district`, `country_group`, `place`
+
+---
+
+### `meta_get_interest_suggestions`
+Given seed interest IDs, return related/similar interest suggestions.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `interest_ids` | string[] | Yes |
+| `limit` | number | No (default: 25) |
+
+---
+
+### `meta_estimate_audience_size`
+Estimate the potential reach of a targeting configuration before spending.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `targeting` | object | Yes — same shape as `meta_deploy_campaign` targeting |
+
+Returns: `{ lower_bound, upper_bound, mau_lower_bound, mau_upper_bound }`
+
+---
+
+## Campaign Creation
 
 > All write tools are no-ops when `DRY_RUN=true`.
 
@@ -126,6 +369,19 @@ Validates: file exists, extension is jpg/jpeg/png/gif/bmp/webp, size < 30MB, not
 Warns if aspect ratio is outside 0.5:1–2:1 (cropping risk). Recommended: 1:1 or 1.91:1.
 
 Returns: `{ image_hash, warning? }`
+
+---
+
+### `meta_upload_video`
+Upload a local video file to the ad account. Returns a `video_id` for use in video ads. Meta processes the video asynchronously after upload — allow ~5 minutes before using it in an ad.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `local_file_path` | string | Yes — absolute path |
+
+Validates: file exists, extension is mp4/mov/avi/mkv/m4v/wmv, size < 4GB. Keep under 1GB for best results.
+
+Returns: `{ video_id }`
 
 ---
 
@@ -199,9 +455,13 @@ Genders: `0` = All, `1` = Male, `2` = Female.
 
 | Parameter | Type | Default | Notes |
 |---|---|---|---|
-| `pixel_id` | string | `858047089973360` | Required for `OUTCOME_SALES` and `OUTCOME_LEADS`. |
-| `use_advantage_audience` | boolean | `false` | Enables Meta Advantage+ automated targeting (`targeting_automation: { advantage_audience: 1 }`). When true, manual targeting spec is used as a signal only. |
+| `pixel_id` | string | env default | Required for `OUTCOME_SALES` and `OUTCOME_LEADS`. |
+| `use_advantage_audience` | boolean | `false` | Enables Meta Advantage+ automated targeting. When true, manual targeting spec is used as a signal only. |
 | `start_immediately` | boolean | `true` | `false` = create in PAUSED status |
+| `special_ad_categories` | string[] | `[]` | Required for regulated ads: `CREDIT`, `EMPLOYMENT`, `HOUSING`, `ISSUES_ELECTIONS_POLITICS` |
+| `destination_type` | string | `WEBSITE` | `WEBSITE`, `MESSENGER`, `WHATSAPP`, `INSTAGRAM_DIRECT`, `APP`, `ON_AD` |
+| `url_tags` | string | — | UTM parameters appended to link (e.g. `utm_source=facebook&utm_campaign=summer`) |
+| `custom_event_type` | string | — | Override conversion event: `PURCHASE`, `LEAD`, `COMPLETE_REGISTRATION`, `ADD_TO_CART`, etc. |
 
 #### Call-to-Action Options
 `LEARN_MORE` · `SHOP_NOW` · `SIGN_UP` · `BOOK_TRAVEL` · `CONTACT_US` · `DOWNLOAD` · `GET_OFFER` · `GET_QUOTE` · `SUBSCRIBE` · `APPLY_NOW`
@@ -212,7 +472,7 @@ Returns on failure: `{ success: false, error, failed_at, rolled_back, error_raw 
 ---
 
 ### `meta_add_ad`
-Add a new ad variation to an existing ad set. Use for A/B testing creatives within one ad set. For full campaign creation, use `meta_deploy_campaign`.
+Add a new ad variation to an existing ad set. Use for creative A/B testing within one ad set.
 
 | Parameter | Type | Required |
 |---|---|---|
@@ -228,185 +488,235 @@ Add a new ad variation to an existing ad set. Use for A/B testing creatives with
 
 ---
 
-### `meta_update_campaign_status`
-Change a campaign to ACTIVE, PAUSED, or ARCHIVED.
+### `meta_deploy_dco_campaign`
+Create a Dynamic Creative Optimization campaign. Meta automatically tests all combinations of your images × headlines × bodies and delivers the best mix to each user.
 
-| Parameter | Type | Required |
-|---|---|---|
-| `campaign_id` | string | Yes |
-| `status` | string | Yes — `ACTIVE`, `PAUSED`, `ARCHIVED` |
+| Parameter | Type | Required | Notes |
+|---|---|---|---|
+| `campaign_name` | string | Yes | |
+| `objective` | string | Yes | Same options as `meta_deploy_campaign` |
+| `daily_budget` | number | Yes | Major currency units |
+| `image_hashes` | string[] | Yes | 2–10 image hashes from `meta_upload_image` |
+| `headlines` | string[] | Yes | 2–5 headline variations |
+| `bodies` | string[] | Yes | 2–5 body text variations |
+| `link_url` | string | Yes | Destination URL |
+| `page_id` | string | Yes | Facebook Page ID |
+| `targeting` | object | Yes | Same shape as `meta_deploy_campaign` targeting |
+| `call_to_action` | string | No | Default: `LEARN_MORE` |
+| `pixel_id` | string | No | Required for OUTCOME_SALES / OUTCOME_LEADS |
+| `start_immediately` | boolean | No | Default: `true` |
 
 ---
 
+## Duplication
+
 ### `meta_duplicate_campaign`
-Deep-copy a campaign via Meta's async batch API. All copied entities are created PAUSED. Allows swapping the funnel URL per ad set.
+Deep-copy a campaign (all ad sets and ads) via Meta's async API. All copied entities are created PAUSED.
 
 | Parameter | Type | Required | Notes |
 |---|---|---|---|
 | `campaign_id` | string | Yes | Source campaign to copy |
-| `new_name` | string | Yes | Name for the new campaign |
-| `funnel_urls` | string[] | Yes | Exactly 3 URLs — one per ad set (in the order ad sets are returned by Meta). New creatives are created with these URLs (creatives are immutable in Meta, so originals are not modified). |
-| `daily_budget_per_adset` | number | Yes | Budget in major currency units per ad set in the new campaign |
+| `new_campaign_name` | string | Yes | Name for the new campaign |
+| `funnel_urls` | string[] | No | New destination URLs per ad set (by index). Omit to keep originals. |
+| `daily_budget_per_adset` | number | No | New daily budget per ad set. Omit to keep originals. |
 
-Process:
-1. Triggers Meta's async copy job (`POST /{campaign_id}/copies`)
-2. Polls `async_session_id` until `complete` (3-second intervals, ~5 min max)
-3. Fetches ad sets in the new campaign, applies per-adset budget
-4. Creates new ad creatives with swapped funnel URLs
+Process: triggers async copy job → polls until complete → applies URL/budget overrides.
 
 Returns: `{ new_campaign_id, status: 'PAUSED', message }`
 
 ---
 
----
+### `meta_duplicate_adset`
+Deep-copy a single ad set (with its ads) into the same or a different campaign.
 
-## New Tools (v1.2.0)
-
-### Account & Billing
-
-#### `meta_get_account_billing`
-Get billing and spend information for the ad account.
-
-**No parameters required.**
-
-Returns: `{ currency, amount_spent, spend_cap, remaining, balance, funding_source }`
+| Parameter | Type | Required | Notes |
+|---|---|---|---|
+| `adset_id` | string | Yes | Source ad set |
+| `target_campaign_id` | string | No | Destination campaign (default: same campaign) |
+| `new_name` | string | No | Default: original name + " Copy" |
+| `deep_copy` | boolean | No | Copy ads inside the ad set (default: `true`) |
+| `status` | string | No | `PAUSED` (default), `ACTIVE`, `INHERITED_FROM_SOURCE` |
 
 ---
 
-#### `meta_get_recommendations`
-Get Meta's automated optimization recommendations.
-
-| Parameter | Type | Default |
-|---|---|---|
-| `limit` | number | 10 |
-
-Returns: `{ recommendations: [{ title, message, importance, confidence, blame_field, code, estimated_daily_results }], total }`
-
----
-
-### Ad Inspection
-
-#### `meta_get_ad_details`
-Full details for a single ad including creative spec, bid, and parent IDs.
-
-| Parameter | Type | Required |
-|---|---|---|
-| `ad_id` | string | Yes |
-
----
-
-#### `meta_get_adset_details`
-Full details for a single ad set including targeting, budget, bid strategy, and schedule.
-
-| Parameter | Type | Required |
-|---|---|---|
-| `adset_id` | string | Yes |
-
----
-
-#### `meta_get_creative_details`
-Full creative spec (object_story_spec, asset_feed_spec for DCO) for an ad creative.
+### `meta_duplicate_creative`
+Clone an ad creative and optionally override copy, headline, CTA, or URL.
 
 | Parameter | Type | Required |
 |---|---|---|
 | `creative_id` | string | Yes |
+| `new_name` | string | No |
+| `body_override` | string | No — replace primary text |
+| `headline_override` | string | No — replace headline |
+| `cta_type_override` | string | No — replace CTA button |
+| `url_override` | string | No — replace destination URL |
+
+Returns: `{ new_creative_id }`
 
 ---
 
-#### `meta_get_ad_preview`
-Generate a preview URL and iframe snippet for an ad.
+## Updates
 
-| Parameter | Type | Default |
-|---|---|---|
-| `ad_id` | string | Required |
-| `ad_format` | string | `DESKTOP_FEED_STANDARD` |
-
-Available formats: `DESKTOP_FEED_STANDARD`, `MOBILE_FEED_STANDARD`, `INSTAGRAM_STANDARD`, `INSTAGRAM_STORY`, `FACEBOOK_STORY_MOBILE`, `MARKETPLACE_MOBILE`, and more.
-
-Returns: `{ ad_id, format, iframe_snippet, shareable_link }`
-
----
-
-### Account Tools
-
-#### `meta_list_pages`
-List Facebook Pages connected to the access token.
-
-| Parameter | Type | Default |
-|---|---|---|
-| `limit` | number | 25 |
-
----
-
-#### `meta_predict_reach`
-Model daily reach curve at a given budget.
+### `meta_update_campaign`
+Update an existing campaign. Only provide fields you want to change.
 
 | Parameter | Type | Required |
 |---|---|---|
-| `targeting` | object | Yes |
-| `daily_budget_usd` | number | No |
-| `optimization_goal` | string | No |
+| `campaign_id` | string | Yes |
+| `name` | string | No |
+| `status` | string | No — `ACTIVE`, `PAUSED`, `ARCHIVED` |
+| `daily_budget` | number | No — major currency units |
+| `lifetime_budget` | number | No — cannot switch type |
+| `bid_strategy` | string | No |
+| `special_ad_categories` | string[] | No — pass `[]` to clear |
 
 ---
 
-#### `meta_bulk_update_status`
-Update status of multiple campaigns, ad sets, or ads in one call.
+### `meta_update_adset`
+Update an existing ad set. Targeting replacement is full — provide the complete object.
+
+| Parameter | Type | Required | Notes |
+|---|---|---|---|
+| `adset_id` | string | Yes | |
+| `name` | string | No | |
+| `status` | string | No | |
+| `daily_budget` | number | No | |
+| `lifetime_budget` | number | No | |
+| `bid_strategy` | string | No | |
+| `bid_amount` | number | No | Required for BID_CAP / COST_CAP strategies |
+| `end_time` | string | No | ISO 8601 |
+| `targeting` | object | No | Full replacement — age, geo, genders, interests, behaviors, placements, custom_audiences |
+| `ad_schedule` | array | No | Dayparting — requires lifetime budget. Each: `{ days, start_minute, end_minute }` |
+| `destination_type` | string | No | `WEBSITE`, `MESSENGER`, `WHATSAPP`, `INSTAGRAM_DIRECT`, `PHONE_CALL`, `APP`, `ON_AD` |
+| `attribution_spec` | array | No | `[{ event_type: "CLICK_THROUGH", window_days: 7 }, ...]` |
+
+---
+
+### `meta_update_ad`
+Update an existing ad's name or status. Creative changes require a new ad (Meta creatives are immutable).
 
 | Parameter | Type | Required |
 |---|---|---|
-| `ids` | string[] | Yes (1–50) |
-| `status` | string | Yes — `ACTIVE`, `PAUSED`, `ARCHIVED` |
+| `ad_id` | string | Yes |
+| `name` | string | No |
+| `status` | string | No — `ACTIVE`, `PAUSED`, `ARCHIVED` |
 
 ---
 
-### Campaign Creation Enhancements (v1.2.0)
+## Custom Audiences
 
-`meta_deploy_campaign` now accepts:
+### `meta_list_audiences`
+List custom audiences with type, approximate size, and delivery status.
 
-| New Parameter | Type | Notes |
+| Parameter | Type | Default |
 |---|---|---|
-| `special_ad_categories` | string[] | `CREDIT`, `EMPLOYMENT`, `HOUSING`, `ISSUES_ELECTIONS_POLITICS` — declare for regulated ads |
-| `destination_type` | string | `WEBSITE`, `MESSENGER`, `WHATSAPP`, `INSTAGRAM_DIRECT`, `APP`, `ON_AD` |
-| `url_tags` | string | UTM parameters appended to destination URL (e.g. `utm_source=facebook&utm_campaign=summer`) |
-| `custom_event_type` | string | Override conversion event: `PURCHASE`, `LEAD`, `COMPLETE_REGISTRATION`, `ADD_TO_CART`, etc. |
-
-`meta_update_campaign` now accepts: `special_ad_categories`
-
-`meta_update_adset` now accepts: `destination_type`, `attribution_spec`
+| `limit` | number | 25 (max 50) |
+| `after` | string | — |
+| `response_format` | string | `detailed` (`concise` = id+name+type only) |
 
 ---
 
-### Audience Tools (v1.2.0)
+### `meta_create_customer_audience`
+Create a custom audience from an email/phone list. Provide plaintext values — the server normalises and SHA-256 hashes them automatically. Minimum 100 matched users for delivery.
 
-#### `meta_create_engagement_audience`
+| Parameter | Type | Required |
+|---|---|---|
+| `name` | string | Yes |
+| `emails` | string[] | No |
+| `phones` | string[] | No |
+| `description` | string | No |
+
+---
+
+### `meta_create_lookalike_audience`
+Create a Lookalike Audience — Meta finds users similar to a seed audience.
+
+| Parameter | Type | Required | Notes |
+|---|---|---|---|
+| `name` | string | Yes | |
+| `source_audience_id` | string | Yes | Seed custom audience (1,000–5,000 users recommended) |
+| `country` | string | Yes | 2-letter ISO country code |
+| `ratio` | number | No | 0.01–0.20 (default: 0.01 = top 1% most similar) |
+| `type` | string | No | `similarity` (default) or `reach` |
+
+---
+
+### `meta_create_website_audience`
+Create a pixel-based website visitor retargeting audience.
+
+| Parameter | Type | Required | Notes |
+|---|---|---|---|
+| `name` | string | Yes | |
+| `pixel_id` | string | Yes | From `meta_list_pixels` |
+| `retention_days` | number | No | 1–180 (default: 30) |
+| `rules` | array | No | URL/event inclusion filters: `[{ type: "url"|"event", operator: "contains"|"equals"|"not_contains"|"starts_with", value }]` |
+| `exclude_rules` | array | No | Same shape — people to EXCLUDE from the audience |
+
+---
+
+### `meta_create_engagement_audience`
 Audience of people who engaged with a Facebook Page or Instagram profile.
 
 | Parameter | Type | Required | Notes |
 |---|---|---|---|
 | `name` | string | Yes | |
 | `source_id` | string | Yes | Page or Instagram account ID |
-| `source_type` | string | No | `page` or `instagram` (default: `page`) |
-| `engagement_type` | string | Yes | e.g. `page_engaged`, `ig_business_profile_all` |
+| `source_type` | string | No | `page` (default) or `instagram` |
+| `engagement_type` | string | Yes | Page: `page_engaged`, `page_liked`, `page_post_engaged`, `page_call_to_action_clicked`. Instagram: `ig_business_profile_all`, `ig_business_profile_engaged`, `ig_business_profile_visited` |
 | `retention_days` | number | No | 1–365 (default: 30) |
 
 ---
 
-#### `meta_create_video_audience`
+### `meta_create_video_audience`
 Retarget people who watched a percentage of a video.
 
 | Parameter | Type | Required | Notes |
 |---|---|---|---|
 | `name` | string | Yes | |
-| `video_id` | string | Yes | |
+| `video_id` | string | Yes | From `meta_list_ad_videos` |
 | `engagement_type` | string | Yes | `video_opened`, `video_25_watched`, `video_50_watched`, `video_75_watched`, `video_95_watched` |
 | `retention_days` | number | No | 1–365 (default: 30) |
 
 ---
 
-### Automated Rules (v1.2.0)
+### `meta_delete_audience`
+Permanently delete a custom audience. Cannot be undone; removes it from any active ad sets.
 
-#### `meta_update_rule`
-Enable, disable, or rename a rule.
+| Parameter | Type | Required |
+|---|---|---|
+| `audience_id` | string | Yes |
+
+---
+
+## Automated Rules
+
+### `meta_list_rules`
+List automated rules with conditions, action, schedule, and status.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `limit` | number | 25 (max 50) |
+| `response_format` | string | `detailed` (`concise` = id+name+status only) |
+
+---
+
+### `meta_create_rule`
+Create an automated rule that monitors performance and takes action when conditions are met.
+
+| Parameter | Type | Required | Notes |
+|---|---|---|---|
+| `name` | string | Yes | |
+| `entity_type` | string | Yes | `CAMPAIGN`, `ADSET`, `AD` |
+| `action` | string | Yes | `PAUSE`, `UNPAUSE`, `INCREASE_DAILY_BUDGET`, `DECREASE_DAILY_BUDGET`, `INCREASE_BID`, `DECREASE_BID`, `SEND_ALERT` |
+| `conditions` | array | Yes | `[{ field, operator, value }]` — field: `cost_per_result`, `spend`, `roas`, `ctr`, `impressions`, etc. Operator: `GREATER_THAN`, `LESS_THAN`, `EQUAL`, `NOT_EQUAL`, `IN_RANGE` |
+| `action_value` | number | No | Percentage for budget/bid actions (e.g. `20` = 20%) |
+| `schedule` | string | No | `SEMI_HOURLY`, `HOURLY`, `EVERY_6_HOURS`, `EVERY_12_HOURS`, `DAILY` (default), `WEEKLY` |
+| `evaluation_window` | string | No | `TODAY`, `LAST_7_DAYS` (default), `LAST_14_DAYS`, `LAST_30_DAYS` |
+
+---
+
+### `meta_update_rule`
+Enable, disable, or rename an automated rule.
 
 | Parameter | Type | Required |
 |---|---|---|
@@ -416,34 +726,58 @@ Enable, disable, or rename a rule.
 
 ---
 
-### Lead Form Enhancements (v1.2.0)
+### `meta_delete_rule`
+Permanently delete an automated rule. Cannot be undone.
 
-`meta_create_lead_form` now accepts:
-
-| New Parameter | Type | Notes |
+| Parameter | Type | Required |
 |---|---|---|
-| `locale` | string | Form display language: `en_US`, `es_ES`, `fr_FR`, `de_DE`, `pt_BR`, `ja_JP`, etc. |
-| `is_optimized_for_quality` | boolean | Adds friction to filter low-intent users — lowers volume, improves quality |
-| question `type: MULTIPLE_CHOICE` | — | Dropdown/radio question; provide `options: string[]` |
+| `rule_id` | string | Yes |
 
 ---
 
-### Analytics Enhancements (v1.2.0)
+## Lead Generation
 
-`meta_get_breakdown_insights` and `meta_request_insights_report` now accept:
+### `meta_list_lead_forms`
+List lead generation forms with status and lead count.
 
-| New Parameter | Type | Notes |
+| Parameter | Type | Default |
 |---|---|---|
-| `attribution_window` | string | `1d_click`, `7d_click`, `28d_click`, `1d_view`, `7d_view`, `7d_click_1d_view`, `28d_click_1d_view` |
-
-Insight responses now include (when non-zero): `unique_clicks`, `unique_ctr`, `outbound_clicks`, `conversion_breakdown`, `conversion_value_breakdown`.
+| `limit` | number | 25 (max 50) |
+| `response_format` | string | `detailed` (`concise` = id+name only) |
 
 ---
 
-### Conversions API (CAPI)
+### `meta_create_lead_form`
+Create a native Meta lead generation form attached to a Facebook Page.
 
-#### `meta_send_conversions_event`
-Send a server-side event to a Meta Pixel with automatic SHA-256 PII hashing.
+| Parameter | Type | Required | Notes |
+|---|---|---|---|
+| `page_id` | string | Yes | Facebook Page ID to attach the form to |
+| `name` | string | Yes | Internal form name (not shown to users) |
+| `questions` | array | No | Fields: `EMAIL`, `PHONE`, `FULL_NAME`, `FIRST_NAME`, `LAST_NAME`, `CITY`, `STATE`, `ZIP`, `COUNTRY`, `COMPANY_NAME`, `JOB_TITLE`, `WORK_EMAIL`, `CUSTOM`, `MULTIPLE_CHOICE`. For CUSTOM/MULTIPLE_CHOICE, also provide `label`. For MULTIPLE_CHOICE, also provide `options: string[]`. |
+| `privacy_policy_url` | string | No | Required by Meta for all lead forms |
+| `context_card_title` | string | No | Intro card headline (improves conversion) |
+| `context_card_content` | string | No | Intro card body text |
+| `thank_you_message` | string | No | Confirmation message after submission |
+| `locale` | string | No | Form display language: `en_US`, `es_ES`, `fr_FR`, `de_DE`, `pt_BR`, `ja_JP`, etc. |
+| `is_optimized_for_quality` | boolean | No | Adds friction to filter low-intent users — lowers volume, improves quality |
+
+---
+
+### `meta_get_leads`
+Retrieve lead submissions from a form.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `form_id` | string | Yes |
+| `limit` | number | No (default: 25) |
+
+---
+
+## Conversions API (CAPI)
+
+### `meta_send_conversions_event`
+Send a server-side event to a Meta Pixel with automatic SHA-256 PII hashing. Use for iOS 14+ signal recovery and deduplication.
 
 | Parameter | Type | Required | Notes |
 |---|---|---|---|
@@ -451,30 +785,30 @@ Send a server-side event to a Meta Pixel with automatic SHA-256 PII hashing.
 | `event_name` | string | Yes | `Purchase`, `Lead`, `ViewContent`, `AddToCart`, `InitiateCheckout`, `CompleteRegistration`, `Subscribe`, `StartTrial` |
 | `event_time` | number | No | Unix timestamp (default: now) |
 | `event_source_url` | string | No | Page URL where the event occurred |
-| `value` | number | No | Order/event value (for Purchase) |
+| `value` | number | No | Order/event value |
 | `currency` | string | No | ISO 4217 (default: `USD`) |
-| `email` | string | No | Hashed automatically |
-| `phone` | string | No | Hashed automatically |
-| `first_name` | string | No | Hashed automatically |
-| `last_name` | string | No | Hashed automatically |
-| `city` | string | No | Hashed automatically |
-| `state` | string | No | Hashed automatically |
-| `zip` | string | No | Hashed automatically |
-| `country` | string | No | Hashed automatically |
-| `external_id` | string | No | Hashed automatically |
+| `email` | string | No | **Hashed automatically** |
+| `phone` | string | No | **Hashed automatically** |
+| `first_name` | string | No | **Hashed automatically** |
+| `last_name` | string | No | **Hashed automatically** |
+| `city` | string | No | **Hashed automatically** |
+| `state` | string | No | **Hashed automatically** |
+| `zip` | string | No | **Hashed automatically** |
+| `country` | string | No | **Hashed automatically** |
+| `external_id` | string | No | **Hashed automatically** |
 | `client_ip_address` | string | No | Sent unhashed |
 | `client_user_agent` | string | No | Sent unhashed |
-| `fbc` | string | No | Facebook click ID cookie |
-| `fbp` | string | No | Facebook browser ID cookie |
-| `event_id` | string | No | Deduplication ID (match browser event `eventID`) |
+| `fbc` | string | No | Facebook click ID cookie (`_fbc`) |
+| `fbp` | string | No | Facebook browser ID cookie (`_fbp`) |
+| `event_id` | string | No | Deduplication ID — match the browser event's `eventID` |
 | `test_event_code` | string | No | Use with Meta Events Manager test tool |
-| `action_source` | string | No | `website`, `app`, `phone_call`, `chat`, `email`, `other` (default: `website`) |
+| `action_source` | string | No | `website` (default), `app`, `phone_call`, `chat`, `email`, `other` |
 
 ---
 
-### Product Catalogs (DPA)
+## Product Catalogs (DPA)
 
-#### `meta_list_product_catalogs`
+### `meta_list_product_catalogs`
 List all product catalogs in the ad account.
 
 | Parameter | Type | Default |
@@ -485,7 +819,7 @@ Returns: `{ catalogs: [{ id, name, vertical, product_count }] }`
 
 ---
 
-#### `meta_get_catalog`
+### `meta_get_catalog`
 Get details for a specific catalog.
 
 | Parameter | Type | Required |
@@ -494,32 +828,32 @@ Get details for a specific catalog.
 
 ---
 
-#### `meta_list_catalog_products`
-Browse products in a catalog.
+### `meta_list_catalog_products`
+Browse products in a catalog with optional search and availability filter.
 
 | Parameter | Type | Default |
 |---|---|---|
 | `catalog_id` | string | Required |
 | `limit` | number | 20 |
 | `filter_availability` | string | — (`in stock`, `out of stock`, `preorder`, `available for order`) |
-| `search` | string | — (search by name/description) |
+| `search` | string | — (search by product name/description) |
 
 ---
 
-#### `meta_list_product_sets`
+### `meta_list_product_sets`
 List product sets (filtered subsets) within a catalog.
 
-| Parameter | Type | Required |
+| Parameter | Type | Default |
 |---|---|---|
-| `catalog_id` | string | Yes |
-| `limit` | number | No (default: 10) |
+| `catalog_id` | string | Required |
+| `limit` | number | 10 |
 
 ---
 
-### A/B Testing
+## A/B Testing
 
-#### `meta_list_ab_tests`
-List A/B split tests in the ad account.
+### `meta_list_ab_tests`
+List A/B split tests (ad studies) in the ad account.
 
 | Parameter | Type | Default |
 |---|---|---|
@@ -527,8 +861,8 @@ List A/B split tests in the ad account.
 
 ---
 
-#### `meta_create_ab_test`
-Create a 50/50 split test between two campaigns.
+### `meta_create_ab_test`
+Create a 50/50 split test comparing two campaigns on a single variable.
 
 | Parameter | Type | Required | Notes |
 |---|---|---|---|
@@ -544,9 +878,30 @@ Returns: `{ success, test_id, name, variable, optimization_metric, confidence_le
 
 ---
 
-### Creative Library & Ads Library
+## Pixels
 
-#### `meta_list_ad_images`
+### `meta_list_pixels`
+List Meta Pixels: ID, name, last-fired time, and availability status.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `limit` | number | 10 (max 25) |
+
+---
+
+### `meta_get_pixel_events`
+Get event counts fired by a pixel, broken down by event name. Use to verify tracking is working.
+
+| Parameter | Type | Required | Notes |
+|---|---|---|---|
+| `pixel_id` | string | Yes | From `meta_list_pixels` |
+| `time_range` | string | No | `last_3d`, `last_7d` (default), `last_14d`, `last_30d` |
+
+---
+
+## Creative Library & Ads Library
+
+### `meta_list_ad_images`
 Browse uploaded ad images in the account.
 
 | Parameter | Type | Default |
@@ -556,7 +911,7 @@ Browse uploaded ad images in the account.
 
 ---
 
-#### `meta_list_ad_videos`
+### `meta_list_ad_videos`
 Browse uploaded ad videos in the account.
 
 | Parameter | Type | Default |
@@ -566,14 +921,23 @@ Browse uploaded ad videos in the account.
 
 ---
 
-#### `meta_search_ads_library`
+### `meta_get_ad_image`
+Fetch and display an ad creative image inline in Claude (base64 decoded).
+
+| Parameter | Type | Required |
+|---|---|---|
+| `image_hash` | string | Yes |
+
+---
+
+### `meta_search_ads_library`
 Search the Meta Ads Library for competitor intelligence.
 
 | Parameter | Type | Required |
 |---|---|---|
 | `search_terms` | string | Yes |
 | `ad_reached_countries` | string[] | No (default: `["US"]`) |
-| `ad_type` | string | No (`ALL`, `POLITICAL_AND_ISSUE_ADS`) |
+| `ad_type` | string | No — `ALL` (default), `POLITICAL_AND_ISSUE_ADS` |
 | `limit` | number | No (default: 10) |
 
 ---
@@ -581,7 +945,8 @@ Search the Meta Ads Library for competitor intelligence.
 ## Architecture Notes
 
 - **API**: Meta Graph API v25.0, called via the Facebook Business SDK and direct `fetch` for endpoints not in the SDK
-- **Rate limiting**: All API calls go through a shared rate limiter (`utils/rate-limiter.ts`)
-- **DRY_RUN**: Set `DRY_RUN=true` in env to simulate all write operations without touching the API
+- **Rate limiting**: All API calls go through a shared score-based rate limiter with exponential backoff (`utils/rate-limiter.ts`)
+- **DRY_RUN**: Set `DRY_RUN=true` in env to simulate all write operations without touching the API — every write tool returns a `dry_run: true` confirmation
 - **Error handling**: Meta API errors are extracted and formatted with human-readable titles. Auth errors (code 190) prompt re-authentication; rate limits (code 4/17) suggest retry; permission errors (code 10) flag token scope issues.
-- **PII hashing**: All PII fields (email, phone, name, address) are SHA-256 hashed before leaving the server (conversions.ts, audience.ts)
+- **PII hashing**: All PII fields (email, phone, name, address) are SHA-256 hashed before leaving the server (`conversions.ts`, `audience.ts`)
+- **Atomic campaign creation**: `meta_deploy_campaign` rolls back all steps on failure — no zombie campaigns or orphaned ad sets
