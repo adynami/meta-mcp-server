@@ -569,6 +569,139 @@ Get event statistics for a specific pixel.
 
 ---
 
+---
+
+## Creative Intelligence Tools *(requires GEMINI_API_KEY)*
+
+All four tools return a graceful error if `GEMINI_API_KEY` is not set. The rest of the server is unaffected.
+
+---
+
+### `meta_generate_ad_copy`
+
+Generate Meta-optimised ad copy with character limit enforcement and hook frameworks.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `product_or_service` | string | Yes | What you're advertising |
+| `objective` | string | Yes | `OUTCOME_AWARENESS`, `ENGAGEMENT`, `LEADS`, `SALES`, `TRAFFIC` |
+| `target_audience` | string | No | Audience description — informs tone and hook |
+| `hook_style` | string | No | `question`, `stat`, `before_after`, `fomo`, `benefit`, `pattern_interrupt` |
+| `key_benefits` | string[] | No | Up to 3 benefits to emphasise |
+| `brand_voice` | string | No | e.g. `"confident and direct"`, `"warm and supportive"` |
+| `variants` | number | No | 1–5 variants (default 1; use 3–5 for DCO) |
+| `link_url` | string | No | Destination URL — incorporated into CTA recommendations |
+
+**Returns:**
+```json
+{
+  "variants": [
+    {
+      "headline": "Stop Doing Reports Manually",
+      "headline_chars": 28,
+      "body": "80% faster reporting. 14-day trial, no card needed.",
+      "body_chars": 51,
+      "body_truncated_preview": "80% faster reporting. 14-day...",
+      "call_to_action": "START_TRIAL",
+      "hook_used": "benefit",
+      "notes": "Leads with quantified benefit, trial urgency"
+    }
+  ],
+  "character_guide": { "headline_ideal": 27, "headline_max": 40, "body_max_before_see_more": 125 },
+  "dco_ready": { "headlines": ["..."], "bodies": ["..."] },
+  "next_step": "Review variants, then pass to meta_deploy_campaign or meta_deploy_dco_campaign."
+}
+```
+
+**Tips:**
+- Ask for `variants: 3` when preparing a DCO campaign — the `dco_ready` object can be passed directly to `meta_deploy_dco_campaign`
+- Specify `hook_style` when you want a consistent creative angle across a campaign
+- `body_truncated_preview` shows exactly what appears before "See more" on mobile
+
+---
+
+### `meta_generate_creative_brief`
+
+Convert any signal — account analytics, competitor ads, or a plain text prompt — into a structured creative brief ready for the full pipeline.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `signal_type` | string | Yes | `from_analytics`, `from_competitor`, `from_prompt` |
+| `signal_data` | string | Yes | The raw signal: JSON from `meta_account_intelligence`, JSON from `meta_search_ad_library`, or plain text |
+| `product_or_service` | string | No | What you're advertising — helps Gemini write a specific brief |
+| `objective` | string | No | Campaign objective |
+| `target_audience` | string | No | Audience description |
+| `brand_voice` | string | No | Tone and style guidance |
+
+**Signal types:**
+- `from_analytics` — paste the JSON output from `meta_account_intelligence`. Gemini identifies what's working, what's fatiguing, and what angles to test next.
+- `from_competitor` — paste the JSON output from `meta_search_ad_library`. Gemini identifies gaps in competitor messaging and recommends angles to exploit.
+- `from_prompt` — plain text description of the product, audience, or creative direction. Good for net-new campaigns.
+
+**Returns:** A structured brief with `hook_style`, `visual_direction`, `copy_direction`, `formats`, `key_benefits`, `reasoning`, `loop_note`, and `next_step` telling Claude exactly which tool to call next.
+
+---
+
+### `meta_search_ad_library`
+
+Search the Meta Ads Library for competitor intelligence. Uses your existing access token — no separate auth required.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `search_terms` | string | Yes | Brand name or keyword to search |
+| `ad_reached_countries` | string[] | No | Country filters (default: `["US"]`) |
+| `ad_active_status` | string | No | `ACTIVE`, `INACTIVE`, `ALL` (default: `ALL`) |
+| `limit` | number | No | Results per page (default: 20, max 50) |
+| `after` | string | No | Pagination cursor |
+
+**Returns:** Normalised competitor ad objects including:
+- `headlines`, `bodies`, `link_urls` — ad copy
+- `platforms` — where the ad runs
+- `run_days` — days active (spend proxy)
+- `is_active` — currently running
+- `performance_signal` — `long_runner_likely_profitable` (≥30 days), `medium_run_testing` (14–29), `short_run_or_new` (<14)
+
+**Tip:** Pass the full response JSON to `meta_generate_creative_brief` with `signal_type: "from_competitor"` to turn competitor data into a creative brief in one step.
+
+**Common error:** If you see code 10 or 200, the access token needs the `ads_read` permission and the app must be approved for Ads Library access. See [Authentication](authentication.md).
+
+---
+
+### `meta_analyze_creative_performance`
+
+Rank ad creatives by performance, identify the winner and losers, and generate a `next_brief` for the next iteration. This is the loop-closure tool — call it after a campaign has run 3–7+ days with meaningful spend.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `campaign_id` | string | Yes | Campaign to analyse — all ads within it are fetched |
+| `time_range` | string | No | `last_3d`, `last_7d`, `last_14d`, `last_30d` (default: `last_7d`) |
+| `primary_metric` | string | No | `ctr`, `cpa`, `roas`, `cpc`, `conversions` — auto-selected if omitted |
+| `product_or_service` | string | No | Helps Gemini write a specific next brief |
+| `objective` | string | No | Campaign objective — informs recommendations |
+
+**Returns (without GEMINI_API_KEY):** Ranked scorecard of all ads sorted by `primary_metric`.
+
+**Returns (with GEMINI_API_KEY):** Full report including:
+- `scorecard` — all ads ranked with computed metrics
+- `synthesis.winner` — winning ad with creative hypothesis (not just "it had better CTR")
+- `synthesis.losers[]` — each with diagnosis and `action: pause | fix | test_variant`
+- `synthesis.learning` — the core insight in one sentence
+- `synthesis.confidence` — `high | medium | low | inconclusive`
+- `synthesis.next_brief` — ready to pass directly to `meta_generate_creative_brief`
+- `loop_instruction` — exact steps to activate the next iteration
+
+**Loop closure:**
+```
+meta_analyze_creative_performance
+  → synthesis.next_brief
+    → meta_generate_creative_brief (signal_type: "from_prompt", signal_data: next_brief as JSON)
+      → meta_generate_ad_copy (3 variants)
+        → imagen_generate_ad (image-gen-mcp)
+          → meta_upload_image → meta_deploy_dco_campaign
+```
+
+---
+
 ## System Setup
 
 See [Installation](installation.md) and [Authentication](authentication.md) for initial setup.

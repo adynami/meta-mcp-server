@@ -5,6 +5,7 @@ export const config = {
   appSecret: process.env.META_APP_SECRET ?? 'REDACTED_APP_SECRET',
   apiVersion: process.env.META_API_VERSION ?? 'v25.0',
   dryRun: process.env.DRY_RUN === 'true',
+  geminiApiKey: process.env.GEMINI_API_KEY ?? '',
 } as const;
 
 export function validateConfig(): void {

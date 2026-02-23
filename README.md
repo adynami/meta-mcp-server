@@ -25,6 +25,7 @@ Ask Claude to manage your Facebook, Instagram, and Threads ad campaigns using pl
 - **Attribution** — configure attribution windows per-breakdown or per-report (1d/7d/28d click + 1d/7d view)
 - **Value Rules** *(optional, advanced)* — tell Meta's auction how much a conversion from a specific segment (iOS, country, placement, age, gender) is worth to your business; adjusts bids in real time without separate campaigns
 - **High Demand Periods** *(optional, advanced)* — pre-schedule automatic budget boosts for specific time windows (Black Friday, flash sales, product launches) on CBO campaigns; boost activates and expires on schedule with no manual intervention
+- **Creative Intelligence** — generate ad copy with Meta-specific character limits and hook frameworks; research competitors via the Ad Library; turn account analytics or competitor data into a structured creative brief; close the iteration loop with AI-powered creative performance analysis (requires `GEMINI_API_KEY`)
 
 All write operations support **DRY_RUN mode** — simulate any action without touching live data.
 
@@ -118,12 +119,16 @@ Ask Claude:
 | Signal recovery | *"Send a Purchase event to our pixel — order #8821, $199, email: user@example.com"* |
 | DPA / e-commerce | *"List our product catalog and show out-of-stock products"* |
 | Competitive research | *"Search the Ads Library for [competitor], show what creatives they're running in the US"* |
+| Generate on-brief ad copy | *"Generate 3 copy variants for a leads campaign targeting marketing managers, stat hook"* |
+| Competitor brief | *"Search the Ad Library for [brand], then generate a creative brief based on the gap in their messaging"* |
+| Account-data brief | *"Pull last 30 days of data and generate a creative brief for what to test next"* |
+| Close the loop | *"Analyse creative performance for campaign [ID] and give me the brief for the next iteration"* |
 
 → [Full Use Cases & Workflows guide](docs/use-cases.md)
 
 ---
 
-## Tools Overview (72 tools)
+## Tools Overview (76 tools)
 
 ### Account & Campaign Management
 
@@ -281,6 +286,17 @@ Ask Claude:
 | `meta_create_budget_schedule` | Schedule an automatic budget boost for a time window (e.g. Black Friday) |
 | `meta_delete_budget_schedule` | Cancel a scheduled budget boost |
 
+### Creative Intelligence *(requires GEMINI_API_KEY)*
+
+> Add `GEMINI_API_KEY` to the server env. Tools return a graceful error if the key is missing — the rest of the server is unaffected.
+
+| Tool | Description |
+|---|---|
+| `meta_generate_ad_copy` | Generate Meta ad copy with character limits (27 ideal / 40 max headline, 125 body), 6 hook frameworks, and DCO-ready headline/body arrays |
+| `meta_generate_creative_brief` | Convert any signal (account analytics, competitor ads, or plain text) into a structured brief ready for the full creative pipeline |
+| `meta_search_ad_library` | Search the Meta Ad Library for competitor ads — returns copy, run duration (spend proxy), platforms, and performance signals |
+| `meta_analyze_creative_performance` | Rank ad creatives by metric, produce winner hypothesis and loser diagnosis, output `next_brief` for the next iteration |
+
 ---
 
 ## Configuration
@@ -293,16 +309,28 @@ Ask Claude:
 | `META_APP_ID` | No | App ID (for token refresh) |
 | `META_APP_SECRET` | No | App secret (for token refresh) |
 | `DRY_RUN` | No | Set to `true` to simulate all write operations |
+| `GEMINI_API_KEY` | No | Enables `meta_generate_ad_copy`, `meta_generate_creative_brief`, `meta_search_ad_library`, `meta_analyze_creative_performance` — server starts without it |
 
 ---
 
 ## Integration with image-gen-mcp
 
-Pair this server with [image-gen-mcp](https://github.com/adynami/image-gen-mcp) to generate ad creatives with Google Imagen 4 and deploy them directly to Meta — all in one Claude conversation:
+Pair this server with [image-gen-mcp](https://github.com/adynami/image-gen-mcp) to run the full autonomous creative loop — from signal to live ad — in a single Claude conversation:
 
-1. *"Generate 3 variations of a fitness ad image with a clean white background"* → `imagen_generate`
-2. *"Upload the first one and create a sales campaign"* → `meta_upload_image` → `meta_deploy_campaign`
-3. *"Now run DCO with all 3 images and 2 headline variants"* → `meta_deploy_dco_campaign`
+**Full loop (signal → brief → creative → deploy → measure → iterate):**
+
+1. *"Pull last 30 days of data and generate a creative brief"* → `meta_account_intelligence` → `meta_generate_creative_brief`
+2. *"Generate 3 ad image variations from the brief"* → `imagen_generate_ad` (4:5, 1:1, 9:16)
+3. *"Add our product photo to the background of the first image"* → `imagen_composite_asset`
+4. *"Add a text overlay with our headline"* → `imagen_add_text_overlay`
+5. *"Upload all images and deploy a DCO campaign"* → `meta_upload_image` × N → `meta_deploy_dco_campaign`
+6. *"After 7 days: analyse creative performance and tell me what to test next"* → `meta_analyze_creative_performance` → `meta_generate_creative_brief` → repeat from step 2
+
+**Minimal path (prompt → live ad in 4 steps):**
+
+1. *"Generate a fitness ad for women 25–40"* → `imagen_generate_ad`
+2. *"Upload and launch a $50/day sales campaign"* → `meta_upload_image` → `meta_deploy_campaign`
+3. *"Now run DCO with 3 images and 2 headline variants"* → `meta_deploy_dco_campaign`
 
 ---
 
@@ -328,6 +356,12 @@ src/
     conversions.ts  — Conversions API (server-side events with PII hashing)
     catalogs.ts     — Product catalogs, products, and product sets
     testing.ts      — A/B split tests (ad studies)
+    value-rules.ts  — Value Rules (bid adjustment by segment)
+    budget-schedules.ts — High Demand Period budget boosts
+    copy.ts         — meta_generate_ad_copy (Gemini-powered, Meta char limits + hook frameworks)
+    brief.ts        — meta_generate_creative_brief (account analytics, competitor ads, or text signal)
+    adlibrary.ts    — meta_search_ad_library (competitor intelligence via /ads_archive)
+    performance.ts  — meta_analyze_creative_performance (winner/loser analysis + next_brief)
   utils/
     rate-limiter.ts — Score-based rate limit + exponential backoff retry
     metrics.ts      — Computed metrics (CTR, CPC, ROAS, CPA, video, conversion funnel, unique clicks)
