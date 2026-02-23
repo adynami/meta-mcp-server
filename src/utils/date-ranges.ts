@@ -7,7 +7,8 @@ export type TimeRangeKey =
   | 'last_30d'
   | 'last_90d'
   | 'this_month'
-  | 'last_month';
+  | 'last_month'
+  | 'custom';
 
 interface DateRange {
   since: string;
@@ -52,6 +53,8 @@ export function resolveRange(key: TimeRangeKey): DateRange {
       const last = new Date(today.getFullYear(), today.getMonth(), 0);
       return { since: fmt(first), until: fmt(last) };
     }
+    case 'custom':
+      throw new Error('resolveRange: "custom" requires explicit since/until — handle before calling resolveRange');
   }
 }
 
