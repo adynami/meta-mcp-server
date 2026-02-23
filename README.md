@@ -80,17 +80,44 @@ Manual config (`~/Library/Application Support/Claude/claude_desktop_config.json`
 
 Ask Claude:
 
-- *"How are my ads doing this week?"*
-- *"Create a campaign for my fitness app with a $50/day budget targeting US males 25–45"*
-- *"Pause all campaigns with a CPA over $100"*
-- *"Duplicate campaign 120215... with a new landing page URL"*
-- *"Create an automated rule that pauses ad sets when cost per result exceeds $50"*
-- *"Search for yoga-related interests and estimate the audience size for US women 25–44"*
-- *"Show me the creative image for ad 12345"*
-- *"Send a server-side Purchase event to our pixel for a $99 order"*
-- *"List our product catalogs and show the first 10 products"*
-- *"Create an A/B test comparing campaign A vs B on creative, running for 14 days"*
-- *"Build a retargeting audience of people who watched 50%+ of our video"*
+**Reporting**
+- *"Give me an account intelligence report for last 30 days"*
+- *"Break down performance by country for the last 14 days — which markets have the best ROAS?"*
+- *"Compare our 7-day click vs 1-day click attribution on the Sales campaign"*
+
+**Campaigns**
+- *"Search for yoga and meditation interests, estimate the audience size for US women 25–44, then launch a $50/day awareness campaign"*
+- *"Create an A/B test comparing campaign A vs B on creative for 14 days"*
+- *"Duplicate campaign 120215... with a new landing page URL and $75/day budget"*
+
+**Automation & Audiences**
+- *"Create a rule that pauses any ad set with CPA over $80 after $200 spent"*
+- *"Build a retargeting audience of people who watched 50%+ of our product video"*
+- *"Create a lookalike from our purchaser list and launch a $100/day campaign targeting US"*
+
+**E-commerce & Leads**
+- *"Send a server-side Purchase event for order #4521, $149, customer email john@example.com"*
+- *"List our product catalogs and show the first 10 products in the main catalog"*
+- *"Create a lead form with name, email, and a multiple-choice question asking budget range"*
+
+> See **[Use Cases & Workflows](docs/use-cases.md)** for 20+ detailed end-to-end examples.
+
+---
+
+## Common Workflows
+
+| Workflow | What to ask Claude |
+|---|---|
+| Weekly performance review | *"Account intelligence report for last 7 days, show me bleeders and top performers"* |
+| Launch a new campaign | *"Search [topic] interests, estimate reach, then deploy a $50/day sales campaign"* |
+| Creative A/B test | *"Create an A/B test: campaign A vs B on creative, end in 14 days, winner by ROAS"* |
+| Retargeting funnel | *"Build website audiences for cart abandoners and purchasers, then create a lookalike from purchasers"* |
+| Budget automation | *"Create a rule: pause ad sets with CPA > $60 after $150 spend, check daily"* |
+| Signal recovery | *"Send a Purchase event to our pixel — order #8821, $199, email: user@example.com"* |
+| DPA / e-commerce | *"List our product catalog and show out-of-stock products"* |
+| Competitive research | *"Search the Ads Library for [competitor], show what creatives they're running in the US"* |
+
+→ [Full Use Cases & Workflows guide](docs/use-cases.md)
 
 ---
 
@@ -302,5 +329,8 @@ Full documentation is in the [`docs/`](docs/) folder:
 - [Authentication](docs/authentication.md)
 - [Configuration](docs/configuration.md)
 - [Tools Reference](docs/tools.md)
+- [**Use Cases & Workflows**](docs/use-cases.md) ← practical end-to-end examples
 - [DRY RUN Mode](docs/dry-run.md)
 - [Troubleshooting](docs/troubleshooting.md)
+
+See also [TOOLS.md](TOOLS.md) for the full tool parameter reference.
