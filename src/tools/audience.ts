@@ -167,6 +167,39 @@ Always ask the user which Page or Instagram account and which engagement type be
     },
   },
   {
+    name: 'meta_create_video_audience',
+    description: `Create a custom audience of people who watched a percentage of one of your videos. Use for video-view retargeting — reach people who showed interest (e.g. watched 50%+) but didn't convert yet.
+
+Retention window: up to 365 days from the view.
+
+Ask the user:
+1. Which video? (provide the video_id from meta_list_ad_videos or the ad's video_id)
+2. What engagement threshold? (25%, 50%, 75%, 95% watched, or just opened/clicked)
+3. How far back to look? (retention_days, default 30)
+
+This is a write operation — confirm before calling.`,
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        name: { type: 'string', description: 'Audience name' },
+        description: { type: 'string', description: 'Optional description' },
+        video_id: { type: 'string', description: 'ID of the video to base the audience on. Get from meta_list_ad_videos.' },
+        engagement_type: {
+          type: 'string',
+          enum: ['video_opened', 'video_25_watched', 'video_50_watched', 'video_75_watched', 'video_95_watched'],
+          description: 'Percentage of the video that was watched. video_opened = any view, video_25_watched = 25%+, etc.',
+        },
+        retention_days: {
+          type: 'number',
+          minimum: 1,
+          maximum: 365,
+          description: 'Lookback window in days (default: 30, max: 365)',
+        },
+      },
+      required: ['name', 'video_id', 'engagement_type'],
+    },
+  },
+  {
     name: 'meta_delete_audience',
     description: 'Permanently delete a custom audience. Cannot be undone. The audience will be removed from any active ad sets using it. Confirm with the user before calling.',
     inputSchema: {
@@ -186,6 +219,7 @@ export async function handleAudienceTool(name: string, args: any): Promise<any> 
     case 'meta_create_lookalike_audience': return createLookalike(args);
     case 'meta_create_website_audience': return createWebsiteAudience(args);
     case 'meta_create_engagement_audience': return createEngagementAudience(args);
+    case 'meta_create_video_audience': return createVideoAudience(args);
     case 'meta_delete_audience': return removeAudience(args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
@@ -444,6 +478,53 @@ async function createEngagementAudience(args: any): Promise<any> {
     engagement_type: args.engagement_type,
     retention_days: retentionDays,
     note: 'Engagement audience takes ~30 minutes to populate.',
+  };
+}
+
+async function createVideoAudience(args: any): Promise<any> {
+  if (config.dryRun) {
+    return {
+      dry_run: true,
+      message: `Simulated: create video audience "${args.name}" — ${args.engagement_type} on video ${args.video_id}`,
+    };
+  }
+
+  const retentionDays = args.retention_days ?? 30;
+  const retentionSeconds = retentionDays * 86400;
+
+  const rule = {
+    inclusions: {
+      operator: 'or',
+      rules: [{
+        event_sources: [{ id: args.video_id, type: 'video' }],
+        retention_seconds: retentionSeconds,
+        filter: {
+          operator: 'and',
+          filters: [{
+            field: 'event',
+            operator: 'eq',
+            value: args.engagement_type,
+          }],
+        },
+      }],
+    },
+  };
+
+  const result = await createCustomAudience({
+    name: args.name,
+    subtype: 'ENGAGEMENT',
+    ...(args.description && { description: args.description }),
+    rule: JSON.stringify(rule),
+  });
+
+  return {
+    success: true,
+    audience_id: result.id,
+    audience_name: args.name,
+    video_id: args.video_id,
+    engagement_type: args.engagement_type,
+    retention_days: retentionDays,
+    note: 'Video audience takes ~30 minutes to populate.',
   };
 }
 

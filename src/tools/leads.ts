@@ -47,11 +47,16 @@ async function graphPost(objectPath: string, params: Record<string, any>): Promi
 export const leadsTools = [
   {
     name: 'meta_list_lead_forms',
-    description: 'List lead generation forms for the ad account. Returns form name, status, and lead count. Use before creating a lead ad to find an existing form ID, or to check how many leads a form has collected.',
+    description: 'List lead generation forms for the ad account. Returns form name, status, and lead count. Use before creating a lead ad to find an existing form ID, or to check how many leads a form has collected. Use response_format=concise when you only need IDs and names.',
     inputSchema: {
       type: 'object' as const,
       properties: {
         limit: { type: 'number', minimum: 1, maximum: 50, description: 'Max results (default 25)' },
+        response_format: {
+          type: 'string',
+          enum: ['concise', 'detailed'],
+          description: 'concise = id+name only, detailed = all fields including status and lead count (default: detailed)',
+        },
       },
     },
   },
@@ -87,17 +92,22 @@ This is a write operation — confirm all details before calling.`,
                   'EMAIL', 'PHONE', 'FULL_NAME', 'FIRST_NAME', 'LAST_NAME',
                   'CITY', 'STATE', 'ZIP', 'COUNTRY',
                   'COMPANY_NAME', 'JOB_TITLE', 'WORK_EMAIL', 'WORK_PHONE',
-                  'CUSTOM',
+                  'CUSTOM', 'MULTIPLE_CHOICE',
                 ],
-                description: 'Field type. Use CUSTOM for a free-text question.',
+                description: 'Field type. Use CUSTOM for a free-text question, MULTIPLE_CHOICE for a dropdown/radio question with predefined options.',
               },
               label: {
                 type: 'string',
-                description: 'Display label for the field. Required for CUSTOM type.',
+                description: 'Display label for the field. Required for CUSTOM and MULTIPLE_CHOICE types.',
               },
               key: {
                 type: 'string',
                 description: 'Field identifier key (snake_case). Auto-generated for standard types if omitted.',
+              },
+              options: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Answer choices for MULTIPLE_CHOICE questions. Required when type=MULTIPLE_CHOICE.',
               },
             },
             required: ['type'],
@@ -118,6 +128,14 @@ This is a write operation — confirm all details before calling.`,
         thank_you_message: {
           type: 'string',
           description: 'Message shown after the user submits the form (e.g. "Thanks! We\'ll be in touch soon.").',
+        },
+        locale: {
+          type: 'string',
+          description: 'Form display language as a locale code (e.g. "en_US", "es_ES", "fr_FR", "de_DE", "pt_BR", "ja_JP", "ko_KR", "zh_CN", "it_IT", "nl_NL"). Default: account locale.',
+        },
+        is_optimized_for_quality: {
+          type: 'boolean',
+          description: 'Enable quality optimization — Meta adds friction to filter out low-intent users, which lowers lead volume but improves lead quality. Recommended when follow-up capacity is limited. Default: false.',
         },
       },
       required: ['page_id', 'name', 'privacy_policy_url'],
@@ -163,21 +181,24 @@ export async function handleLeadsTool(name: string, args: any): Promise<any> {
 // ── Implementations ──
 
 async function listLeadForms(args: any): Promise<any> {
+  const concise = args.response_format === 'concise';
   const result = await rateLimitedCall(() =>
     graphGet(`${config.adAccountId}/leadgen_forms`, {
-      fields: 'id,name,status,leads_count,created_time',
+      fields: concise ? 'id,name' : 'id,name,status,leads_count,created_time',
       limit: args.limit ?? 25,
     }),
   );
 
   return {
-    forms: (result.data ?? []).map((f: any) => ({
-      id: f.id,
-      name: f.name,
-      status: f.status,
-      leads_count: f.leads_count ?? 0,
-      created: f.created_time,
-    })),
+    forms: (result.data ?? []).map((f: any) => concise
+      ? { id: f.id, name: f.name }
+      : {
+          id: f.id,
+          name: f.name,
+          status: f.status,
+          leads_count: f.leads_count ?? 0,
+          created: f.created_time,
+        }),
   };
 }
 
@@ -211,6 +232,9 @@ async function createLeadForm(args: any): Promise<any> {
     const key = q.key ?? STANDARD_KEYS[q.type] ?? q.type.toLowerCase();
     const question: Record<string, any> = { type: q.type, key };
     if (q.label) question.label = q.label;
+    if (q.type === 'MULTIPLE_CHOICE' && q.options?.length) {
+      question.inline_context = q.options.map((opt: string) => ({ key: opt.toLowerCase().replace(/\s+/g, '_'), value: opt }));
+    }
     return question;
   });
 
@@ -229,6 +253,8 @@ async function createLeadForm(args: any): Promise<any> {
     name: args.name,
     privacy_policy: JSON.stringify({ url: args.privacy_policy_url }),
     ...(questions.length > 0 && { questions: JSON.stringify(questions) }),
+    ...(args.locale && { locale: args.locale }),
+    ...(args.is_optimized_for_quality && { is_optimized_for_quality: true }),
   };
 
   // Context card (intro screen)

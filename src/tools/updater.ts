@@ -26,6 +26,11 @@ export const updaterTools = [
           enum: ['LOWEST_COST_WITHOUT_CAP', 'LOWEST_COST_WITH_BID_CAP', 'COST_CAP', 'LOWEST_COST_WITH_MIN_ROAS'],
           description: 'New bid strategy (CBO campaigns)',
         },
+        special_ad_categories: {
+          type: 'array',
+          items: { type: 'string', enum: ['CREDIT', 'EMPLOYMENT', 'HOUSING', 'ISSUES_ELECTIONS_POLITICS'] },
+          description: 'Declare special ad categories if the campaign now covers regulated content (credit, housing, employment, politics). Pass an empty array [] to clear.',
+        },
       },
       required: ['campaign_id'],
     },
@@ -113,6 +118,23 @@ export const updaterTools = [
             required: ['days', 'start_minute', 'end_minute'],
           },
         },
+        destination_type: {
+          type: 'string',
+          enum: ['WEBSITE', 'MESSENGER', 'WHATSAPP', 'INSTAGRAM_DIRECT', 'PHONE_CALL', 'APP', 'ON_AD'],
+          description: 'Update where users land after clicking the ad',
+        },
+        attribution_spec: {
+          type: 'array',
+          description: 'Override attribution windows for this ad set. Each entry specifies an event type and window. Example: [{"event_type":"CLICK_THROUGH","window_days":7},{"event_type":"VIEW_THROUGH","window_days":1}]',
+          items: {
+            type: 'object',
+            properties: {
+              event_type: { type: 'string', enum: ['CLICK_THROUGH', 'VIEW_THROUGH', 'ENGAGED_VIEW_THROUGH'] },
+              window_days: { type: 'number', enum: [1, 7, 28], description: '1, 7, or 28 days' },
+            },
+            required: ['event_type', 'window_days'],
+          },
+        },
       },
       required: ['adset_id'],
     },
@@ -148,6 +170,7 @@ async function handleUpdateCampaign(args: any): Promise<any> {
   if (args.daily_budget != null) params.daily_budget = Math.round(args.daily_budget * 100).toString();
   if (args.lifetime_budget != null) params.lifetime_budget = Math.round(args.lifetime_budget * 100).toString();
   if (args.bid_strategy) params.bid_strategy = args.bid_strategy;
+  if (args.special_ad_categories != null) params.special_ad_categories = args.special_ad_categories;
 
   if (Object.keys(params).length === 0) {
     return { success: false, error: 'No fields to update were provided.' };
@@ -208,6 +231,8 @@ async function handleUpdateAdSet(args: any): Promise<any> {
   }
 
   if (args.ad_schedule?.length) params.adset_schedule = args.ad_schedule;
+  if (args.destination_type) params.destination_type = args.destination_type;
+  if (args.attribution_spec?.length) params.attribution_spec = args.attribution_spec;
 
   if (Object.keys(params).length === 0) {
     return { success: false, error: 'No fields to update were provided.' };
