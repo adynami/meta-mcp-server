@@ -17,6 +17,7 @@ Practical examples of what you can accomplish with the Meta MCP Server. Each sce
 9. [Compliance & Account Health](#9-compliance--account-health)
 10. [Competitive Intelligence](#10-competitive-intelligence)
 11. [Zero-Conversion Diagnostics & Creative Iteration](#11-zero-conversion-diagnostics--creative-iteration)
+12. [Value Rules — Advanced Bid Adjustment](#12-value-rules--advanced-bid-adjustment)
 
 ---
 
@@ -1446,7 +1447,132 @@ Campaign → No conversions → Funnel audit (pixel events) → Creative scoring
 
 ---
 
-## Tips for Working with Claude on Ad Tasks
+## 12. Value Rules — Advanced Bid Adjustment
+
+> **Optional feature.** Value Rules are not used by default. Claude will only call these tools when you explicitly ask. Before enabling Value Rules, read Meta's caveat: *overall CPA may increase* because you are constraining the auction. They are best suited for businesses with genuine differences in customer lifetime value across segments.
+
+**Background:** Value Rules tell Meta's auction algorithm how much a conversion from a specific audience segment is worth to your business. Unlike Automated Rules (which pause or scale campaigns *after* the fact), Value Rules act *during* the auction — Meta adjusts your effective bid in real time so you win more impressions from high-value users and fewer from low-value ones.
+
+---
+
+### 12.1 Boost Bids for High-LTV Platforms (iOS vs Android)
+
+**Scenario:** Your data shows iOS customers have a 2× higher 90-day LTV than Android customers. You want Meta to bid more aggressively for iOS impressions without running separate campaigns.
+
+**Prompts:**
+- *"List any existing value rules on the account first."*
+- *"Create a value rule that boosts bids by 80% for iOS users, priority 1."*
+- *"Create a second rule that reduces bids by 30% for Android users, priority 2."*
+
+**Tools used:** `meta_list_value_rules` → `meta_create_value_rule` (×2)
+
+**Example conditions:**
+```
+Condition: user_os i_contains [IOS]   → multiplier: 1.8
+Condition: user_os i_contains [ANDROID] → multiplier: 0.7
+```
+
+**What Claude does:** Creates two rules at the account level. iOS users bid at 1.8× the base, Android at 0.7×. The rules evaluate in priority order — if a user matches rule 1, rule 2 is skipped.
+
+---
+
+### 12.2 Increase Bids for Top Geographic Markets
+
+**Scenario:** You sell luxury goods and customers from New York, Los Angeles, and San Francisco convert at 3× the rate of other US cities. You want Meta to allocate more budget to those markets.
+
+**Prompts:**
+- *"Create a value rule that increases bids by 50% for users in New York, Los Angeles, and San Francisco."*
+- *"Show me my current value rules and their priorities."*
+
+**Tools used:** `meta_search_geo_locations` → `meta_create_value_rule` → `meta_list_value_rules`
+
+**Note:** Use `meta_search_geo_locations` first with `location_types: ["city"]` to get the exact city keys Meta requires for the conditions array.
+
+---
+
+### 12.3 Suppress Low-Value Placements at the Bid Level
+
+**Scenario:** Audience Network placements have a 4× higher CPA than Facebook Feed. Rather than excluding Audience Network entirely (which reduces reach), you want to keep it active but bid less.
+
+**Prompts:**
+- *"Create a value rule that reduces bids by 40% for Audience Network placements."*
+
+**Tools used:** `meta_create_value_rule`
+
+**Example condition:**
+```
+Condition: publisher_platform i_contains [audience_network] → multiplier: 0.6
+```
+
+**Why use this instead of placement exclusion?** Excluding a placement entirely can hurt delivery and increase CPMs on remaining placements. A bid reduction keeps reach available while limiting overspend.
+
+---
+
+### 12.4 Age-Based Bid Adjustment for Subscription Products
+
+**Scenario:** Your analytics show that 35–54 year olds have a 60% higher subscription retention rate than 18–24 year olds. You want Meta to prioritize the higher-retention cohort.
+
+**Prompts:**
+- *"Create a value rule: boost bids by 60% for users aged 35–44 and 45–54, priority 1."*
+- *"Create another rule: reduce bids by 25% for users aged 18–24, priority 2."*
+
+**Tools used:** `meta_create_value_rule` (×2)
+
+**Example conditions:**
+```
+Rule 1: age i_contains [35-44, 45-54] → multiplier: 1.6, priority: 1
+Rule 2: age i_contains [18-24]        → multiplier: 0.75, priority: 2
+```
+
+---
+
+### 12.5 Campaign-Specific Rule (Isolate Impact)
+
+**Scenario:** You want to test Value Rules on one campaign before rolling out account-wide.
+
+**Prompts:**
+- *"Apply a value rule only to campaign [ID] — boost iOS users by 40%."*
+
+**Tools used:** `meta_list_campaigns` → `meta_create_value_rule` (with `campaign_id`)
+
+**What Claude does:** Creates the rule scoped to the specific campaign rather than the account, so other campaigns are unaffected. Useful for A/B validating the impact before wider deployment.
+
+---
+
+### 12.6 Review, Adjust, and Clean Up Rules
+
+**Scenario:** After running Value Rules for 30 days you want to review performance and update or remove underperforming rules.
+
+**Prompts:**
+- *"List all my value rules."*
+- *"Update rule [ID] — change the multiplier from 1.8 to 1.5."*
+- *"Disable the Android suppression rule for now without deleting it."*
+- *"Delete the old Audience Network rule — I'm going to use placement exclusions instead."*
+
+**Tools used:** `meta_list_value_rules` → `meta_update_value_rule` → `meta_delete_value_rule`
+
+**Tip:** Always list rules before creating new ones to avoid duplicate or conflicting rules. Priority order matters — the first matching rule wins, others are skipped.
+
+---
+
+### Value Rules Quick Reference
+
+| Goal | Condition field | Example values | Suggested multiplier |
+|---|---|---|---|
+| Boost iOS users | `user_os` | `["IOS"]` | 1.5–2.0 |
+| Suppress Android | `user_os` | `["ANDROID"]` | 0.6–0.8 |
+| Top-market boost | `country` | `["US","GB","AU"]` | 1.3–1.8 |
+| Suppress low-value country | `country` | `["XX"]` | 0.5–0.7 |
+| High-LTV age band | `age` | `["35-44","45-54"]` | 1.4–1.8 |
+| Suppress low-LTV age | `age` | `["18-24"]` | 0.6–0.8 |
+| High-value placement | `publisher_platform` | `["facebook"]` | 1.2–1.5 |
+| Suppress low-quality placement | `publisher_platform` | `["audience_network"]` | 0.5–0.7 |
+| Reels-specific boost | `placement` | `["reels"]` | 1.2–1.5 |
+| Female audience premium | `gender` | `["2"]` | 1.3–1.6 |
+
+---
+
+
 
 **Be specific about numbers.** Instead of "increase the budget", say "increase the daily budget to $75/day". Claude will confirm before writing any changes.
 
