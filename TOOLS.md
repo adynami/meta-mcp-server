@@ -2,7 +2,7 @@
 
 Meta Marketing API v25.0 via MCP. All write operations respect `DRY_RUN` mode (simulated responses, no API calls).
 
-**65 tools** across 14 categories.
+**69 tools** across 15 categories.
 
 ---
 
@@ -24,6 +24,7 @@ Meta Marketing API v25.0 via MCP. All write operations respect `DRY_RUN` mode (s
 - [Pixels](#pixels)
 - [Creative Library & Ads Library](#creative-library--ads-library)
 - [Debug](#debug)
+- [Value Rules (Advanced Bidding)](#value-rules-advanced-bidding)
 - [Architecture Notes](#architecture-notes)
 
 ---
@@ -939,6 +940,85 @@ Search the Meta Ads Library for competitor intelligence.
 | `ad_reached_countries` | string[] | No (default: `["US"]`) |
 | `ad_type` | string | No — `ALL` (default), `POLITICAL_AND_ISSUE_ADS` |
 | `limit` | number | No (default: 10) |
+
+---
+
+## Value Rules (Advanced Bidding)
+
+> **Optional feature** — Value Rules are not used by default. Claude will only call these tools when you explicitly ask to create or manage them.
+
+Value Rules tell Meta's auction algorithm how much a conversion from a specific audience segment, device, placement, or location is worth to your business. They adjust bids **in real time**, per impression — before the auction is resolved. This is fundamentally different from Automated Rules (which react to performance after the fact).
+
+**When to use them:** You have measurable evidence that one segment generates higher customer lifetime value than another — e.g. iOS users purchase again at 3× the rate, or customers in California spend 2× the average order value.
+
+**Meta's official caveat:** Overall CPA may increase when using Value Rules. Use only when segment-level LTV differences are real and measurable.
+
+**Supported conditions:** `user_os` · `country` · `region` · `city` · `age` · `gender` · `publisher_platform` · `placement`
+
+**Multiplier range:** 0.1 (−90%) to 10.0 (+1,000%). Rules are evaluated in priority order; only the first matching rule applies per impression.
+
+**Campaign compatibility:** OUTCOME_SALES, OUTCOME_LEADS, OUTCOME_APP_PROMOTION, OUTCOME_TRAFFIC, OUTCOME_AWARENESS, OUTCOME_ENGAGEMENT. Not available for Shop, Web+Shop, or special ad category campaigns (housing, employment, credit).
+
+---
+
+### `meta_list_value_rules`
+List all Value Rules configured for the ad account.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `limit` | number | 25 |
+
+Returns: `{ value_rules: [{ id, name, status, priority, multiplier, multiplier_display, conditions }], total }`
+
+---
+
+### `meta_create_value_rule`
+Create a Value Rule that adjusts Meta's bidding for a specific segment.
+
+| Parameter | Type | Required | Notes |
+|---|---|---|---|
+| `name` | string | Yes | Display name (e.g. "Boost iOS", "Reduce Audience Network") |
+| `conditions` | array | Yes | 1–2 conditions (AND-ed). Each: `{ field, operator, values }` |
+| `multiplier` | number | Yes | 0.1–10.0. `1.5` = bid 50% more. `0.7` = bid 30% less. |
+| `priority` | number | No | Evaluation order (lower = first). Default: appended last. |
+| `status` | string | No | `ENABLED` (default) or `DISABLED` |
+| `campaign_id` | string | No | Associate with a specific campaign. Omit for account-level. |
+
+**Condition fields and their values:**
+
+| `field` | Example `values` |
+|---|---|
+| `user_os` | `["IOS"]`, `["ANDROID"]`, `["IOS", "ANDROID"]` |
+| `country` | `["US", "CA", "GB"]` |
+| `age` | `["25-34", "35-44"]` |
+| `gender` | `["1"]` (male) or `["2"]` (female) |
+| `publisher_platform` | `["instagram"]`, `["audience_network"]` |
+| `placement` | `["reels"]`, `["feed", "story"]` |
+
+**Operators:** `i_contains` (IS one of) · `i_not_contains` (is NOT one of)
+
+---
+
+### `meta_update_value_rule`
+Update an existing Value Rule. Only provide fields to change.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `value_rule_id` | string | Yes |
+| `name` | string | No |
+| `multiplier` | number | No |
+| `status` | string | No — `ENABLED` or `DISABLED` |
+| `priority` | number | No |
+| `conditions` | array | No — replaces all existing conditions |
+
+---
+
+### `meta_delete_value_rule`
+Permanently delete a Value Rule. Bidding returns to baseline for affected segments immediately.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `value_rule_id` | string | Yes |
 
 ---
 

@@ -23,6 +23,7 @@ Ask Claude to manage your Facebook, Instagram, and Threads ad campaigns using pl
 - **Library** — browse the Meta Ads Library for competitive intelligence; manage ad image and video assets
 - **Debug** — diagnose why an ad isn't delivering
 - **Attribution** — configure attribution windows per-breakdown or per-report (1d/7d/28d click + 1d/7d view)
+- **Value Rules** *(optional, advanced)* — tell Meta's auction how much a conversion from a specific segment (iOS, country, placement, age, gender) is worth to your business; adjusts bids in real time without separate campaigns
 
 All write operations support **DRY_RUN mode** — simulate any action without touching live data.
 
@@ -121,7 +122,7 @@ Ask Claude:
 
 ---
 
-## Tools Overview (65 tools)
+## Tools Overview (69 tools)
 
 ### Account & Campaign Management
 
@@ -257,6 +258,17 @@ Ask Claude:
 | `meta_list_ad_videos` | Browse uploaded ad videos in the account |
 | `meta_get_ad_image` | Fetch and display ad creative image inline in Claude |
 | `meta_search_ads_library` | Search Meta Ads Library for competitor intelligence |
+
+### Value Rules *(optional, advanced)*
+
+> Not applied by default. Claude only uses these tools when you explicitly ask.
+
+| Tool | Description |
+|---|---|
+| `meta_list_value_rules` | List Value Rules configured in the account |
+| `meta_create_value_rule` | Create a rule that adjusts Meta's auction bid for a specific segment (OS, country, placement, age, gender) |
+| `meta_update_value_rule` | Update multiplier, conditions, priority, or status |
+| `meta_delete_value_rule` | Permanently delete a Value Rule |
 
 ---
 
