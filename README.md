@@ -8,13 +8,15 @@ Ask Claude to manage your Facebook, Instagram, and Threads ad campaigns using pl
 
 ## What You Can Do
 
-- **Query** — campaign performance, insights by breakdown (age, country, placement, device), period-over-period intelligence reports
+- **Query** — campaign performance, insights by breakdown (age, country, placement, device), period-over-period intelligence reports, full pixel funnel breakdown (view_content → add_to_cart → initiate_checkout → purchase) on every insights response
 - **Create** — full campaigns (Campaign + Ad Set + Ad) in one atomic call with automatic rollback on failure
 - **DCO** — Dynamic Creative Optimization: give Claude 2–10 images and 2–5 headlines/bodies, Meta tests all combinations automatically
-- **Duplicate** — deep-copy campaigns with new URLs and budgets via Meta's async API
+- **Duplicate** — deep-copy campaigns, ad sets, and creatives with overrides via Meta's async API
 - **Automate** — create automated rules that pause high-CPA ad sets, scale winning budgets, or send alerts
 - **Audiences** — customer list, lookalike, and website retargeting audiences
 - **Lead forms** — create native Facebook lead gen forms and retrieve lead submissions
+- **Targeting research** — search interests, behaviors, demographics, and geo locations; estimate audience size before spending
+- **Creative preview** — fetch and display ad creative images inline in Claude
 - **Threads** — run ads on Threads placement (globally available)
 - **Pixels** — list pixels and view event statistics
 - **Debug** — diagnose why an ad isn't delivering
@@ -80,6 +82,9 @@ Ask Claude:
 - *"Pause all campaigns with a CPA over $100"*
 - *"Duplicate campaign 120215... with a new landing page URL"*
 - *"Create an automated rule that pauses ad sets when cost per result exceeds $50"*
+- *"Search for yoga-related interests and estimate the audience size for US women 25–44"*
+- *"Show me the creative image for ad 12345"*
+- *"Clone ad set 789 into campaign 456 as a paused copy"*
 
 ---
 
@@ -99,7 +104,14 @@ Ask Claude:
 | `meta_request_insights_report` | Async deep report for 60–365 day ranges |
 | `meta_account_intelligence` | AI-ready period-over-period summary + top/bottom campaigns |
 | `meta_debug_ad` | Diagnose delivery issues (review status, learning phase, budget) |
-| `meta_search_targeting` | Search interest and behavior IDs for targeting |
+| `meta_search_targeting` | Search interest and behavior IDs (legacy) |
+| `meta_search_interests` | Search interest targeting options with audience sizes |
+| `meta_search_behaviors` | Search behavior targeting options |
+| `meta_search_demographics` | Search life events, industries, income, device, OS, and more |
+| `meta_search_geo_locations` | Search countries, regions, cities, and zip codes |
+| `meta_get_interest_suggestions` | Expand a seed interest list with related suggestions |
+| `meta_estimate_audience_size` | Estimate reach before spending — validates targeting before launch |
+| `meta_get_ad_image` | Fetch and display ad creative image inline in Claude |
 | `meta_list_audiences` | List custom audiences |
 | `meta_list_pixels` | List Meta Pixels |
 | `meta_get_pixel_events` | Pixel event statistics |
@@ -117,6 +129,8 @@ Ask Claude:
 | `meta_deploy_dco_campaign` | Dynamic Creative Optimization — test multiple images × headlines × bodies |
 | `meta_add_ad` | Add creative variation to an existing ad set |
 | `meta_duplicate_campaign` | Deep-copy campaign with optional URL and budget overrides |
+| `meta_duplicate_adset` | Deep-copy a single ad set into the same or a different campaign |
+| `meta_duplicate_creative` | Clone a creative with text/headline/CTA/URL overrides |
 | `meta_update_campaign` | Update name, status, budget, or bid strategy |
 | `meta_update_adset` | Update budget, bid, targeting, or schedule |
 | `meta_update_ad` | Update name or status |
@@ -166,7 +180,7 @@ src/
     analyst.ts      — Insights, breakdown, intelligence, async reports
     creator.ts      — Image/video upload, deploy campaign, DCO
     debug.ts        — Ad delivery diagnostics
-    duplicator.ts   — Async campaign copy
+    duplicator.ts   — Async campaign, ad set, and creative copy
     audience.ts     — Custom audiences (list, customer, lookalike, website)
     updater.ts      — Campaign/ad set/ad update tools
     pixels.ts       — Pixel list and event stats
@@ -174,10 +188,11 @@ src/
     leads.ts        — Lead forms and lead retrieval
   utils/
     rate-limiter.ts — Score-based rate limit + exponential backoff retry
-    metrics.ts      — Computed metrics (CTR, CPC, ROAS, CPA, video)
+    metrics.ts      — Computed metrics (CTR, CPC, ROAS, CPA, video, conversion funnel breakdown)
     date-ranges.ts  — Time range resolution
     batch.ts        — Graph API batch request utility
     schemas.ts      — Shared TypeScript types
+    targeting.ts    — Shared targeting spec builder (used by creator + estimate tools)
 scripts/
   get-token.ts           — OAuth setup wizard (npm run setup)
   setup-system-user.ts   — System User token wizard (npm run setup-system-user)

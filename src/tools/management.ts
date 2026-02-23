@@ -1,4 +1,5 @@
 import { config } from '../config.js';
+import { rateLimitedCall } from '../utils/rate-limiter.js';
 import {
   fetchCampaigns, fetchAdSets, fetchAds,
   fetchAccountInsights, fetchCampaignInsights,
@@ -361,6 +362,37 @@ export const managementTools = [
     },
   },
   {
+    name: 'meta_get_ad_preview',
+    description: 'Generate a preview URL and iframe snippet for an ad in a given format. Use to visually review an ad before it goes live, or to share a preview with a client. Returns a shareable_link URL that can be opened in a browser.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        ad_id: { type: 'string', description: 'Ad ID to preview' },
+        ad_format: {
+          type: 'string',
+          enum: ['DESKTOP_FEED_STANDARD', 'MOBILE_FEED_STANDARD', 'MOBILE_FEED_BASIC', 'MOBILE_INTERSTITIAL', 'MOBILE_BANNER', 'MOBILE_MEDIUM_RECTANGLE', 'MOBILE_NATIVE', 'INSTAGRAM_STANDARD', 'INSTAGRAM_STORY', 'AUDIENCE_NETWORK_OUTSTREAM_VIDEO', 'MESSENGER_MOBILE_INBOX_MEDIA', 'FACEBOOK_STORY_MOBILE', 'MARKETPLACE_MOBILE'],
+          description: 'Preview format (default: DESKTOP_FEED_STANDARD)',
+        },
+      },
+      required: ['ad_id'],
+    },
+  },
+  {
+    name: 'meta_get_account_billing',
+    description: 'Get billing and spend information for the ad account: total amount spent, remaining spend cap, current balance, and funding source. Use to check account health, remaining budget, or payment method before launching campaigns.',
+    inputSchema: { type: 'object' as const, properties: {} },
+  },
+  {
+    name: 'meta_get_recommendations',
+    description: 'Get Meta\'s automated optimization recommendations for the ad account. Returns suggestions like enabling Advantage+ audience, fixing rejected ads, increasing budgets on high-performing campaigns, or fixing delivery issues. Use when auditing the account or preparing optimization reports.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        limit: { type: 'number', minimum: 1, maximum: 25, description: 'Max recommendations to return (default 10)' },
+      },
+    },
+  },
+  {
     name: 'meta_add_ad',
     description: `Create a new ad inside an existing ad set. Use when adding additional ad variations (different images/copy) to an ad set that already exists — e.g., A/B testing creatives within one ad set. Requires an image_hash from meta_upload_image. For creating a full campaign from scratch, use meta_deploy_campaign instead.`,
     inputSchema: {
@@ -415,6 +447,9 @@ export async function handleManagementTool(name: string, args: any): Promise<any
     case 'meta_list_pages': return handleListPages(args);
     case 'meta_predict_reach': return handlePredictReach(args);
     case 'meta_bulk_update_status': return handleBulkUpdateStatus(args);
+    case 'meta_get_ad_preview': return handleGetAdPreview(args);
+    case 'meta_get_account_billing': return handleGetAccountBilling();
+    case 'meta_get_recommendations': return handleGetRecommendations(args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
 }
@@ -913,4 +948,87 @@ async function addAd(args: any): Promise<any> {
 
     return { success: false, error: errorDetail };
   }
+}
+
+// ── Local Graph API helper for endpoints not in the SDK ──
+
+async function graphGet(objectPath: string, params: Record<string, any> = {}): Promise<any> {
+  const qp = new URLSearchParams({ access_token: config.accessToken });
+  for (const [k, v] of Object.entries(params)) {
+    qp.append(k, typeof v === 'object' ? JSON.stringify(v) : String(v));
+  }
+  const url = `https://graph.facebook.com/${config.apiVersion}/${objectPath}?${qp.toString()}`;
+  const response = await fetch(url);
+  const data = await response.json() as any;
+  if (!response.ok || data.error) {
+    const e = data.error ?? {};
+    const err = new Error(e.message ?? `HTTP ${response.status}`) as any;
+    err.response = { error: e };
+    throw err;
+  }
+  return data;
+}
+
+async function handleGetAdPreview(args: any): Promise<any> {
+  const format = args.ad_format ?? 'DESKTOP_FEED_STANDARD';
+  const result = await rateLimitedCall(() =>
+    graphGet(`${args.ad_id}/previews`, { ad_format: format }),
+  );
+
+  const preview = result.data?.[0];
+  if (!preview) return { success: false, error: 'No preview available for this ad format.' };
+
+  return {
+    ad_id: args.ad_id,
+    format,
+    iframe_snippet: preview.body,
+    shareable_link: preview.preview_shareable_link ?? null,
+    note: 'Open shareable_link in a browser to preview the ad. The iframe can be embedded in a web page.',
+  };
+}
+
+async function handleGetAccountBilling(): Promise<any> {
+  const result = await rateLimitedCall(() =>
+    graphGet(config.adAccountId, {
+      fields: 'amount_spent,spend_cap,balance,currency,funding_source_details',
+    }),
+  );
+
+  const spent = result.amount_spent ? (parseInt(result.amount_spent) / 100).toFixed(2) : '0.00';
+  const cap = result.spend_cap ? (parseInt(result.spend_cap) / 100).toFixed(2) : null;
+  const balance = result.balance ? (parseInt(result.balance) / 100).toFixed(2) : null;
+
+  return {
+    currency: result.currency,
+    amount_spent: spent,
+    spend_cap: cap,
+    remaining: cap ? (parseFloat(cap) - parseFloat(spent)).toFixed(2) : null,
+    balance,
+    funding_source: result.funding_source_details?.display_string ?? result.funding_source_details?.type ?? null,
+  };
+}
+
+async function handleGetRecommendations(args: any): Promise<any> {
+  const result = await rateLimitedCall(() =>
+    graphGet(`${config.adAccountId}/recommendations`, {
+      fields: 'title,message,blame_field,code,confidence,estimated_daily_results,importance,recommendation_data',
+      limit: args.limit ?? 10,
+    }),
+  );
+
+  const recommendations = (result.data ?? []).map((r: any) => ({
+    title: r.title ?? null,
+    message: r.message ?? null,
+    importance: r.importance ?? null,
+    confidence: r.confidence ?? null,
+    blame_field: r.blame_field ?? null,
+    code: r.code ?? null,
+    estimated_daily_results: r.estimated_daily_results ?? null,
+  }));
+
+  return {
+    recommendations,
+    total: recommendations.length,
+    note: recommendations.length === 0 ? 'No recommendations found — account is well optimized.' : undefined,
+  };
 }

@@ -6,6 +6,7 @@ import {
   uploadAdImage, uploadAdVideo, deleteCampaign, deleteAdSet,
   getAccountContext,
 } from '../meta-client.js';
+import { buildTargetingSpec } from '../utils/targeting.js';
 
 export const creatorTools = [
   {
@@ -218,6 +219,25 @@ export const creatorTools = [
           required: ['body', 'link_url'],
         },
         pixel_id: { type: 'string', description: 'Meta Pixel ID for conversion tracking. Required for OUTCOME_SALES and OUTCOME_LEADS. Use meta_list_pixels to find your pixel ID.' },
+        custom_event_type: {
+          type: 'string',
+          enum: ['PURCHASE', 'LEAD', 'COMPLETE_REGISTRATION', 'ADD_TO_CART', 'ADD_TO_WISHLIST', 'INITIATED_CHECKOUT', 'ADD_PAYMENT_INFO', 'CONTENT_VIEW', 'SEARCH', 'SUBSCRIBE', 'START_TRIAL', 'CONTACT', 'FIND_LOCATION', 'SCHEDULE', 'SUBMIT_APPLICATION', 'DONATE', 'OTHER'],
+          description: 'Conversion event to optimize for. Overrides the default (PURCHASE for OUTCOME_SALES, LEAD for OUTCOME_LEADS). Use when the pixel fires a non-standard event you want to optimize for.',
+        },
+        destination_type: {
+          type: 'string',
+          enum: ['WEBSITE', 'MESSENGER', 'WHATSAPP', 'INSTAGRAM_DIRECT', 'PHONE_CALL', 'APP', 'ON_AD'],
+          description: 'Where users are sent after clicking the ad. Default: WEBSITE. Use MESSENGER/WHATSAPP to open a chat, ON_AD for lead forms and instant experiences.',
+        },
+        url_tags: {
+          type: 'string',
+          description: 'UTM parameters appended to the destination URL for tracking. Example: "utm_source=facebook&utm_medium=cpc&utm_campaign=summer_sale". Meta auto-substitutes {{campaign.id}}, {{adset.id}}, {{ad.id}}, {{placement}}, etc.',
+        },
+        special_ad_categories: {
+          type: 'array',
+          items: { type: 'string', enum: ['CREDIT', 'EMPLOYMENT', 'HOUSING', 'ISSUES_ELECTIONS_POLITICS'] },
+          description: 'REQUIRED if advertising credit, housing, employment, or political content. Meta applies special audience restrictions. Always ask the user if any of these apply — running regulated ads without declaring the category can result in account suspension.',
+        },
         use_advantage_audience: { type: 'boolean', description: 'Enable Meta Advantage+ audience targeting — Meta expands your defined audience when it predicts better results. Always ask the user whether they want to enable this before deploying; it can significantly change who sees the ads. Default: false.' },
         start_immediately: { type: 'boolean', description: 'true = ACTIVE, false = PAUSED (default: true)' },
       },
@@ -469,7 +489,7 @@ async function handleDeploy(args: any): Promise<any> {
       name: args.campaign_name,
       objective: args.objective,
       status,
-      special_ad_categories: [],
+      special_ad_categories: args.special_ad_categories ?? [],
     };
 
     if (budgetLevel === 'CBO') {
@@ -485,38 +505,7 @@ async function handleDeploy(args: any): Promise<any> {
     steps.push(`Campaign ${campaignId}`);
 
     const useAdvantageAudience = args.use_advantage_audience === true;
-
-    const t = args.targeting;
-    const targeting: Record<string, any> = {
-      age_min: t.age_min ?? 18,
-      age_max: t.age_max ?? 65,
-      genders: t.genders ?? [0],
-      geo_locations: { countries: t.geo_locations?.countries ?? ['US'], location_types: ['home', 'recent'] },
-      targeting_automation: { advantage_audience: useAdvantageAudience ? 1 : 0 },
-    };
-
-    // Interest / behavior targeting via flexible_spec
-    if (t.interests?.length || t.behaviors?.length) {
-      const spec: Record<string, any> = {};
-      if (t.interests?.length) spec.interests = t.interests.map((i: any) => ({ id: i.id }));
-      if (t.behaviors?.length) spec.behaviors = t.behaviors.map((b: any) => ({ id: b.id }));
-      targeting.flexible_spec = [spec];
-    }
-
-    // Custom audience include / exclude
-    if (t.custom_audiences?.length) targeting.custom_audiences = t.custom_audiences.map((a: any) => ({ id: a.id }));
-    if (t.excluded_custom_audiences?.length) targeting.excluded_custom_audiences = t.excluded_custom_audiences.map((a: any) => ({ id: a.id }));
-
-    // Manual placements (omitting lets Meta use Advantage+ Placements)
-    if (t.placements) {
-      const p = t.placements;
-      if (p.publisher_platforms?.length) targeting.publisher_platforms = p.publisher_platforms;
-      if (p.facebook_positions?.length) targeting.facebook_positions = p.facebook_positions;
-      if (p.instagram_positions?.length) targeting.instagram_positions = p.instagram_positions;
-      if (p.audience_network_positions?.length) targeting.audience_network_positions = p.audience_network_positions;
-      if (p.messenger_positions?.length) targeting.messenger_positions = p.messenger_positions;
-      if (p.threads_positions?.length) targeting.threads_positions = p.threads_positions;
-    }
+    const targeting = buildTargetingSpec(args.targeting, useAdvantageAudience);
 
     // --- Ad set params ---
     const adsetParams: Record<string, any> = {
@@ -540,6 +529,7 @@ async function handleDeploy(args: any): Promise<any> {
 
     if (args.start_time) adsetParams.start_time = args.start_time;
     if (args.ad_schedule?.length) adsetParams.adset_schedule = args.ad_schedule;
+    if (args.destination_type) adsetParams.destination_type = args.destination_type;
 
     // Bid amount — required for BID_CAP and COST_CAP, on ad set regardless of CBO/ABO
     if (bidStrategy === 'LOWEST_COST_WITH_BID_CAP' || bidStrategy === 'COST_CAP') {
@@ -557,12 +547,12 @@ async function handleDeploy(args: any): Promise<any> {
     if (args.objective === 'OUTCOME_SALES') {
       adsetParams.promoted_object = {
         pixel_id: args.pixel_id,
-        custom_event_type: 'PURCHASE',
+        custom_event_type: args.custom_event_type ?? 'PURCHASE',
       };
     } else if (args.objective === 'OUTCOME_LEADS') {
       adsetParams.promoted_object = {
         pixel_id: args.pixel_id,
-        custom_event_type: 'LEAD',
+        custom_event_type: args.custom_event_type ?? 'LEAD',
       };
     }
 
@@ -571,11 +561,13 @@ async function handleDeploy(args: any): Promise<any> {
     steps.push(`Ad Set ${adsetId}`);
 
     const objectStorySpec = buildObjectStorySpec(creativeType, args);
+    const creative: Record<string, any> = { object_story_spec: objectStorySpec };
+    if (args.url_tags) creative.url_tags = args.url_tags;
     const adResult = await createAd({
       adset_id: adsetId,
       name: `${args.campaign_name} - Ad`,
       status,
-      creative: { object_story_spec: objectStorySpec },
+      creative,
     });
 
     return {
