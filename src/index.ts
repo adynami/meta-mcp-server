@@ -21,6 +21,7 @@ import { libraryTools, handleLibraryTool } from './tools/library.js';
 import { conversionsTools, handleConversionsTool } from './tools/conversions.js';
 import { catalogTools, handleCatalogTool } from './tools/catalogs.js';
 import { testingTools, handleTestingTool } from './tools/testing.js';
+import { valueRulesTools, handleValueRulesTool } from './tools/value-rules.js';
 
 const ALL_TOOLS = [
   ...managementTools,
@@ -37,6 +38,7 @@ const ALL_TOOLS = [
   ...conversionsTools,
   ...catalogTools,
   ...testingTools,
+  ...valueRulesTools,
 ];
 
 const managementToolNames = new Set(managementTools.map(t => t.name));
@@ -53,9 +55,10 @@ const libraryToolNames = new Set(libraryTools.map(t => t.name));
 const conversionsToolNames = new Set(conversionsTools.map(t => t.name));
 const catalogToolNames = new Set(catalogTools.map(t => t.name));
 const testingToolNames = new Set(testingTools.map(t => t.name));
+const valueRulesToolNames = new Set(valueRulesTools.map(t => t.name));
 
 const server = new Server(
-  { name: 'meta-marketing-mcp', version: '1.2.0' },
+  { name: 'meta-marketing-mcp', version: '1.3.0' },
   { capabilities: { tools: {} } },
 );
 
@@ -97,6 +100,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       result = await handleCatalogTool(name, args ?? {});
     } else if (testingToolNames.has(name)) {
       result = await handleTestingTool(name, args ?? {});
+    } else if (valueRulesToolNames.has(name)) {
+      result = await handleValueRulesTool(name, args ?? {});
     } else {
       return {
         content: [{ type: 'text', text: `Unknown tool "${name}". Available: ${ALL_TOOLS.map(t => t.name).join(', ')}` }],
