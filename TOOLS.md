@@ -2,7 +2,7 @@
 
 Meta Marketing API v25.0 via MCP. All write operations respect `DRY_RUN` mode (simulated responses, no API calls).
 
-**69 tools** across 15 categories.
+**72 tools** across 16 categories.
 
 ---
 
@@ -25,6 +25,7 @@ Meta Marketing API v25.0 via MCP. All write operations respect `DRY_RUN` mode (s
 - [Creative Library & Ads Library](#creative-library--ads-library)
 - [Debug](#debug)
 - [Value Rules (Advanced Bidding)](#value-rules-advanced-bidding)
+- [High Demand Periods (Advanced Budget Scheduling)](#high-demand-periods-advanced-budget-scheduling)
 - [Architecture Notes](#architecture-notes)
 
 ---
@@ -1019,6 +1020,60 @@ Permanently delete a Value Rule. Bidding returns to baseline for affected segmen
 | Parameter | Type | Required |
 |---|---|---|
 | `value_rule_id` | string | Yes |
+
+---
+
+## High Demand Periods (Advanced Budget Scheduling)
+
+> **Optional feature** — High Demand Period budget schedules are not used by default. Claude will only call these tools when you explicitly ask.
+
+High Demand Periods let you pre-schedule a temporary budget boost for a specific time window — Black Friday, Cyber Monday, a weekend flash sale, a product launch, or any other period where you expect higher purchase intent. The boost activates and expires automatically with no manual intervention.
+
+**Requirements & Meta constraints:**
+- Campaign must have **Campaign Budget Optimization (CBO)** enabled
+- Period must be at least **3 hours** long
+- ABSOLUTE budget cannot exceed **8× the campaign's daily budget**
+- Maximum **50 schedules** per campaign
+- Schedules cannot overlap
+
+**Budget value types:**
+- `ABSOLUTE` — set an explicit budget cap in account currency for the period (value in cents, e.g. 10000 = $100)
+- `MULTIPLIER` — scale the existing daily budget by a factor (e.g. 2.0 = double it, 1.5 = +50%)
+
+---
+
+### `meta_list_budget_schedules`
+List all High Demand Period budget schedules for a CBO campaign.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `campaign_id` | string | Yes |
+
+Returns: `{ campaign_id, budget_schedules: [{ id, budget_value, budget_value_type, budget_display, time_start, time_end, time_start_human, time_end_human, status }], total }`
+
+---
+
+### `meta_create_budget_schedule`
+Schedule a budget boost for a specific time window on a CBO campaign.
+
+| Parameter | Type | Required | Notes |
+|---|---|---|---|
+| `campaign_id` | string | Yes | Must be a CBO campaign |
+| `budget_value` | number | Yes | Cents for ABSOLUTE (e.g. 15000 = $150), decimal for MULTIPLIER (e.g. 2.0) |
+| `budget_value_type` | string | Yes | `ABSOLUTE` or `MULTIPLIER` |
+| `time_start` | number | Yes | Unix timestamp (seconds) for boost start |
+| `time_end` | number | Yes | Unix timestamp (seconds) for boost end (min 3h after start) |
+
+Returns: `{ success, budget_schedule_id, campaign_id, budget_display, time_start_human, time_end_human, duration_hours }`
+
+---
+
+### `meta_delete_budget_schedule`
+Cancel a scheduled budget boost. If already active, reverts the budget immediately.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `budget_schedule_id` | string | Yes |
 
 ---
 
