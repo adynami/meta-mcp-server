@@ -16,6 +16,7 @@ Practical examples of what you can accomplish with the Meta MCP Server. Each sce
 8. [Signal Recovery (iOS 14+)](#8-signal-recovery-ios-14)
 9. [Compliance & Account Health](#9-compliance--account-health)
 10. [Competitive Intelligence](#10-competitive-intelligence)
+11. [Zero-Conversion Diagnostics & Creative Iteration](#11-zero-conversion-diagnostics--creative-iteration)
 
 ---
 
@@ -1022,7 +1023,390 @@ What offers keep appearing? What creative formats are dominant — video or imag
 
 ---
 
-## Quick Reference: Tool-to-Task Mapping
+## 11. Zero-Conversion Diagnostics & Creative Iteration
+
+You've been running a campaign for several days. Traffic is flowing, money is being spent, but purchases aren't happening. Before killing the campaign or blindly swapping creatives, use the data you already have — engagement signals, funnel events, demographic splits, video retention, and placement performance — to find out exactly what's working and why conversions aren't closing. Most of the answers are already in the account.
+
+---
+
+### 11.1 The Pixel Funnel Audit: Find Exactly Where People Drop Off
+
+**Scenario:** You're spending $200/day on a sales campaign and getting zero purchases. Before blaming the creative, you want to know whether people are engaging with the funnel at all — viewing the product page, adding to cart, starting checkout — or dropping off right at the first click.
+
+**Claude prompts:**
+
+```
+Show me the full conversion funnel breakdown for our sales campaign 120210001234567
+over the last 7 days. I want to see view_content, add_to_cart, initiate_checkout,
+and purchase counts — not just the total conversion number.
+```
+
+```
+The purchases are zero but I want to know if anyone is adding to cart or starting
+checkout. Pull insights at the ad level and show me the conversion_breakdown for
+each ad.
+```
+
+**Tools called:**
+1. `meta_get_insights` with `level: campaign`, `campaign_id` — check `conversion_breakdown` in the response (shows `view_content`, `add_to_cart`, `initiate_checkout`, `purchase` counts from the pixel)
+2. `meta_get_insights` with `level: ad` — same breakdown per ad to spot individual creative performance
+
+**How to read the funnel:**
+
+| Funnel Pattern | What It Means | Where to Fix |
+|---|---|---|
+| High `view_content`, zero `add_to_cart` | Ad is relevant enough to click but the product page isn't selling | Landing page — price, copy, trust signals |
+| High `add_to_cart`, zero `initiate_checkout` | People want it but abandon before checkout | Cart page — shipping cost reveal, forced account creation |
+| High `initiate_checkout`, zero `purchase` | Checkout is the friction point | Payment flow — form complexity, payment methods, delivery time |
+| Zero `view_content` | Clicks aren't reaching your pixel or the pixel isn't firing | Pixel installation — check `meta_get_pixel_events` |
+
+**Tips:**
+- If `view_content` is zero but your click count is non-zero, your pixel isn't firing on the landing page — fix tracking before spending more
+- A 10:3:1 ratio (view_content:add_to_cart:purchase) is roughly healthy for cold traffic; if you're at 100:1:0, the landing page is the problem, not the ad
+- This analysis tells you whether to iterate on the creative (top-of-funnel problem) or the website (bottom-of-funnel problem) — two completely different fixes
+
+---
+
+### 11.2 Score Your Creatives by Engagement Before Any Purchase Data Arrives
+
+**Scenario:** You launched 5 different ad creatives testing different angles (price-led, benefit-led, social proof, problem/solution, UGC style). After 3 days you have zero purchases — but 3 days is plenty of time to get statistically meaningful CTR data. Use engagement signals to rank the angles before they've proven themselves on conversions.
+
+**Claude prompts:**
+
+```
+Show me insights for all ads in campaign 120210001234567 for the last 3 days.
+I want CTR, unique CTR, outbound_clicks, CPC, and CPM for each ad — sorted by CTR.
+```
+
+```
+Which of our 5 ads is generating the most genuine interest? Compare their link
+click rates and tell me which angle is resonating most with the audience.
+```
+
+**Tools called:**
+- `meta_get_insights` with `level: ad`, `campaign_id` — returns `ctr`, `unique_ctr`, `outbound_clicks`, `cpc`, `cpm`, `impressions` per ad
+
+**How to interpret the engagement signals:**
+
+| Metric | What It Tells You |
+|---|---|
+| `ctr` (all clicks / impressions) | Raw interest — includes post likes, comment clicks, profile taps |
+| `unique_ctr` | How many distinct people clicked — filters out repeat clickers |
+| `outbound_clicks` | Clicks that actually leave Facebook to your site — the most purchase-intent signal |
+| `cpc` | Cost efficiency — a low-CTR ad with low CPM can still have a better CPC than a high-CTR ad on an expensive placement |
+| Gap between `ctr` and `outbound_clicks` | Large gap = people are clicking within Facebook (post engagement) but not visiting your site |
+
+**Creative scoring formula (without conversions):**
+1. Rank by `outbound_clicks` descending — this is purchase intent, not just curiosity
+2. Filter out any ad with fewer than 500 impressions — not enough data yet
+3. The top 1-2 ads by outbound CTR are your "winners" to iterate on
+
+**Tips:**
+- A 2× difference in CTR between two ads after 1,000+ impressions each is statistically meaningful — act on it
+- An ad with high CTR but low `outbound_clicks` suggests the creative generates curiosity but the copy/headline doesn't make a clear enough offer — the hook works but the call-to-action doesn't
+- Use `meta_get_creative_details` on the top performers to extract their exact copy, image hash, and CTA for use in the next iteration
+
+---
+
+### 11.3 Video Hook Analysis: Find the Angle That Actually Holds Attention
+
+**Scenario:** You're running 4 video ads, each opening with a different hook: a bold claim, a problem statement, a customer testimonial, and a "did you know?" fact. Zero purchases after 5 days. But video completion data tells you which opening angle makes people watch — which is the leading indicator of conversion intent.
+
+**Claude prompts:**
+
+```
+Show me video performance for all ads in campaign 120210009999999. I want
+views_3s, views at 25%, 50%, 75%, 100%, average watch time, and completion rate
+for each ad.
+```
+
+```
+Which of our video ads holds attention the longest? Compare completion rates
+and identify which hook is keeping people watching past the 50% mark.
+```
+
+**Tools called:**
+- `meta_get_insights` with `level: ad`, `campaign_id` — `video` object in each row contains `views_3s`, `views_p25`, `views_p50`, `views_p75`, `views_p100`, `avg_watch_time_sec`, `completion_rate`
+
+**Reading the video retention curve:**
+
+| Drop-off Point | What It Signals | What to Fix |
+|---|---|---|
+| <25% watch | The opening hook isn't grabbing attention | Test new opening 3 seconds — pattern interrupt, bold claim, or question |
+| 25–50% | Hook works but the message doesn't sustain interest | Restructure middle — get to the core benefit faster |
+| 50–75% | Story is working but close doesn't land | Sharpen the CTA and offer in final 25% |
+| High `views_p75` but no outbound clicks | People watch but don't act | Add a stronger verbal or on-screen CTA mid-video and at the end |
+
+**Iterating on the winning hook:**
+
+```
+The testimonial video has a 38% completion rate — double the others.
+Duplicate creative 23856790001111 and override the URL to our new landing page.
+Then let's deploy DCO using that video's thumbnail image with 3 headline variations.
+```
+
+**Tools called:**
+1. `meta_duplicate_creative` with `url_override` — swap the destination without re-uploading the video
+2. `meta_deploy_dco_campaign` — test 3 headline variations against the proven video thumbnail
+
+**Tips:**
+- `completion_rate` = `views_p100 / views_3s` — the single most important video metric for ad quality; anything above 25% is good for cold traffic
+- Average watch time divided by video length gives you a proxy completion rate if `completion_rate` isn't populated
+- A video with 40% completion but zero purchases still tells you: people believe the message, the problem is after the click. That's a landing page test, not a creative test.
+
+---
+
+### 11.4 The Demographic Surprise: Let the Data Pick Your Real Audience
+
+**Scenario:** You targeted US men aged 25–44 for a fitness supplement campaign. Zero purchases after $500 spent. But before abandoning the targeting, run a demographic breakdown — you might discover your actual buyers are a completely different segment to the one you assumed.
+
+**Claude prompts:**
+
+```
+Break down our campaign 120210001234567 by age and gender for the last 14 days.
+I want CTR and spend per segment — I'm looking for unexpected high-performers.
+```
+
+```
+Which age groups and genders are clicking our ads the most? Show me country
+breakdown too — I want to see if any markets are outperforming.
+```
+
+**Tools called:**
+1. `meta_get_breakdown_insights` with `breakdown: age_gender`, `campaign_id`
+2. `meta_get_breakdown_insights` with `breakdown: country`, `campaign_id`
+
+**What you might find (real-world examples):**
+
+| Discovery | Implication |
+|---|---|
+| Women 35–44 clicking at 3× the rate of men 25–34 | Your product/message resonates more with women — create a dedicated ad set targeting them |
+| Australia CTR is 4× higher than US despite tiny spend | An untapped market — scale budget in AU, test localized copy |
+| Age 55+ has lowest CPC despite being excluded from the original brief | Expand the age range — older audiences are often less competitive |
+| 18–24 segment has highest CTR but zero conversions | They're window shopping — tighten targeting or require purchase intent signals |
+
+**Acting on the discovery:**
+
+```
+Create a new ad set targeting US women 35-44 only, $50/day, same creative.
+And create a second targeting Australia, all genders 30-55, $25/day.
+```
+
+**Tools called:**
+- `meta_estimate_audience_size` — confirm the newly-discovered segments are large enough before deploying
+- `meta_deploy_campaign` — new campaign targeted to the winning demographic with identical creative
+
+**Tips:**
+- Run demographic breakdowns after at least 1,000 impressions per segment — smaller sample sizes produce misleading signals
+- When a surprise segment emerges, don't just add it to the existing ad set — create a dedicated ad set with copy written specifically for that audience
+- Combine `age_gender` and `country` breakdowns: "Women 35–44 in Australia" might be your true sweet spot
+
+---
+
+### 11.5 Placement Intelligence: Your Creative Might Be Working — Just Not Everywhere
+
+**Scenario:** An ad campaign has a blended 0.6% CTR — seemingly mediocre. But before writing off the creative, check whether that number is the average of one placement performing brilliantly and another dragging it down.
+
+**Claude prompts:**
+
+```
+Break down campaign 120210007654321 by placement for the last 10 days.
+I want to see CTR, CPC, and spend per placement.
+```
+
+```
+Is our creative working better on Instagram versus Facebook? Show me the placement
+breakdown and tell me which placements I should keep and which to cut.
+```
+
+**Tools called:**
+- `meta_get_breakdown_insights` with `breakdown: placement`, `campaign_id`
+
+**Typical placement pattern for different creative formats:**
+
+| Creative Format | Usually Performs Best | Usually Performs Worst |
+|---|---|---|
+| Short vertical video (9:16) | Instagram Reels, Facebook Reels, Stories | Desktop right column, Marketplace |
+| Square image (1:1) with text overlay | Facebook Feed, Instagram Feed | Audience Network |
+| Carousel | Facebook Feed, Instagram Feed | Stories (format mismatch) |
+| Long-form video (60s+) | Facebook in-stream video | All mobile placements |
+
+**Acting on placement data:**
+
+```
+Our Instagram Reels placement has 2.4% CTR but Facebook Right Column is at 0.1%.
+Duplicate ad set 23856790012345 and restrict it to Instagram only —
+publisher_platforms: instagram, instagram_positions: [reels, stream, story].
+```
+
+**Tools called:**
+1. `meta_duplicate_adset` — clone the ad set
+2. `meta_update_adset` with `targeting.placements` — restrict to the winning placements
+3. `meta_bulk_update_status` — pause the underperforming original
+
+**Tips:**
+- Advantage+ placements (the default) optimizes across placements automatically — but this analysis is useful when you have a specific format that only works in certain environments
+- A creative designed for Reels (vertical, fast-paced, subtitled) will always underperform on Desktop Feed where users have more attention — these need separate creatives, not just placement restrictions
+- `meta_get_ad_preview` with different `ad_format` values lets you visually verify how a creative renders before restricting placement
+
+---
+
+### 11.6 Time-of-Day & Day-of-Week Patterns: When Is Your Audience Actually Buying?
+
+**Scenario:** You have a campaign running 24/7 at the same bid. But your product (e.g., a B2B SaaS tool, a food delivery service, or a weekend experience) has a natural purchase window. You want to identify peak engagement hours and schedule spend accordingly.
+
+**Claude prompts:**
+
+```
+Show me a daily breakdown of our campaign 120210008888888 over the last 30 days.
+I want to see which days of the week have the best CTR and lowest CPA.
+```
+
+```
+Pull a daily time series for campaign 120210008888888 — I want to see spend,
+clicks, and conversions day by day so I can spot any weekday/weekend patterns.
+```
+
+**Tools called:**
+- `meta_get_breakdown_insights` with `time_series: daily`, `campaign_id` — returns day-by-day performance rows
+
+**Common patterns and what to do with them:**
+
+| Pattern | What It Reveals | Action |
+|---|---|---|
+| CTR peaks Tuesday–Thursday, drops Friday–Sunday | B2B audience — they browse at work | Add dayparting: run ads Mon–Fri 8am–6pm only |
+| Conversions spike Sunday evening | Weekend consideration → Sunday intent | Increase bids for Sunday afternoon, reduce Monday morning |
+| CPAs are 40% lower on days with high CTR | Creative fatigue is periodic, not linear | Pause on low days, use saved budget to increase bids on peak days |
+| Consistent performance across all days | Evergreen product with no purchase window | Don't daypart — you'll lose reach for no gain |
+
+**Setting up dayparting:**
+
+```
+Update ad set 23856790056789 to only run Monday through Friday,
+8am to 8pm in the account timezone. Add dayparting schedule for those hours.
+```
+
+**Tools called:**
+- `meta_update_adset` with `ad_schedule: [{ days: [1,2,3,4,5], start_minute: 480, end_minute: 1200 }]`
+
+> Note: `days` uses 0=Sunday through 6=Saturday. `start_minute` and `end_minute` are minutes from midnight. Dayparting requires a **lifetime budget** on the ad set.
+
+**Tips:**
+- Use at least 14 days of data before implementing dayparting — weekly variance can mislead you with a shorter window
+- For e-commerce, Sunday evening 6–10pm is often the highest-intent window in English-speaking markets; for B2B, Tuesday–Wednesday 10am–2pm
+- Dayparting doesn't eliminate spend on off-hours; it pauses the ad set during those windows — combine with a modest lifetime budget increase to compensate for the restricted delivery window
+
+---
+
+### 11.7 Frequency & Audience Exhaustion: When the Ad Isn't the Problem
+
+**Scenario:** Your campaign ran well for two weeks and then CTR started declining steadily. Before changing the creative, check whether the audience has simply seen the ad too many times — the symptom looks identical but the fix is completely different.
+
+**Claude prompts:**
+
+```
+Show me a daily time series for campaign 120210006543210 over the last 21 days.
+I want CTR and frequency per day so I can see if declining performance correlates
+with rising frequency.
+```
+
+```
+What's the current frequency on our retargeting campaign? And how does CTR
+compare between the first week and the last 7 days?
+```
+
+**Tools called:**
+1. `meta_get_breakdown_insights` with `time_series: daily`, `campaign_id` — `frequency` and `ctr` per day
+2. `meta_get_insights` with `time_range: last_7d` vs `time_range: last_14d` — compare periods manually
+
+**Reading the frequency–CTR relationship:**
+
+| Frequency | Typical Effect | Recommended Action |
+|---|---|---|
+| 1.0–2.0 | CTR usually stable or rising (novelty) | Normal — keep running |
+| 2.0–3.5 | Slight CTR decline is normal | Acceptable — monitor weekly |
+| 3.5–5.0 | CTR drops 20–40%, CPA rises | Refresh creative OR expand audience |
+| 5.0+ | Severe CTR degradation | Pause and replace — audience is saturated |
+
+**Diagnosing frequency vs creative fatigue:**
+- **Frequency is rising AND CTR is falling** → audience exhaustion. Fix: expand targeting, build a lookalike from engagers, or add new audience segments.
+- **Frequency is stable AND CTR is falling** → creative fatigue. Fix: new images, new copy angles, test DCO.
+- **Frequency is stable AND CTR is stable** → neither. Look elsewhere (landing page, checkout, product-market fit).
+
+**Acting on audience exhaustion:**
+
+```
+Our retargeting audience has frequency 6.2 and CTR has dropped from 2.1% to 0.4%.
+The audience is exhausted. Build a lookalike from the people who engaged with
+our page in the last 30 days, estimate the size for US, then launch the same
+creative to the lookalike at $40/day.
+```
+
+**Tools called:**
+1. `meta_create_engagement_audience` — build seed from page engagers
+2. `meta_create_lookalike_audience` — 1% lookalike from the engagement seed
+3. `meta_predict_reach` — confirm the lookalike is large enough
+4. `meta_deploy_campaign` — launch existing creative to the new audience
+
+**Tips:**
+- Retargeting audiences (website visitors, video viewers) exhaust faster than cold audiences because they're smaller by definition — cap frequency at 3 for retargeting, 5 for prospecting
+- `meta_estimate_audience_size` on your current ad set targeting will show you if the audience is too small (under 50,000) — small audiences always exhaust fast regardless of creative quality
+- When you refresh creative on an exhausted audience, reset the frequency counter mentally — the new creative starts fresh even to people who saw the old one
+
+---
+
+### 11.8 Building the Next Iteration: From Signals to a Systematic DCO Test
+
+**Scenario:** After running the analyses above, you've found your signals: one demographic segment outperforms, two placement types dominate, one video hook drives high completion, and one headline drives outbound clicks. Now systematically test the best combinations in a single DCO campaign rather than guessing.
+
+**Claude prompts:**
+
+```
+Based on what we've found: the "social proof" angle image has the best outbound CTR,
+but we haven't tested it with 3 different headlines. Upload image /path/to/social_proof.jpg
+and deploy a DCO campaign testing these 3 headlines:
+  1. "Join 14,000 customers who switched"
+  2. "The only supplement backed by 3 clinical studies"
+  3. "Results in 30 days or your money back"
+And 2 body texts:
+  1. "Stop wasting money on products that don't work."
+  2. "Finally, a formula that actually delivers."
+Target: US women 35-50, $60/day, paused to start.
+```
+
+**Tools called:**
+1. `meta_upload_image` — upload the winning creative
+2. `meta_deploy_dco_campaign` with `image_hashes: [hash]`, `headlines: [3 options]`, `bodies: [2 options]`, `start_immediately: false`
+
+**Why DCO is the right tool here:**
+Meta will test all 3 × 2 = 6 combinations and automatically weight delivery toward whichever combination generates the best results for your optimization goal — without you manually creating 6 separate ads and splitting budget.
+
+**Reading DCO results after 7 days:**
+
+```
+Show me creative performance for campaign 120210001112222 broken down by ad.
+I want to see which headline + body combination is winning on outbound CTR.
+```
+
+**Tools called:**
+- `meta_get_insights` with `level: ad`, `campaign_id` — each DCO combination surfaces as a separate row
+- `meta_get_creative_details` on the top-performing ad — extract the exact winning combination for future use
+
+**The full iteration loop:**
+
+```
+Campaign → No conversions → Funnel audit (pixel events) → Creative scoring (CTR/outbound)
+→ Video analysis (completion rate) → Demographic breakdown → Placement breakdown
+→ Frequency check → Build DCO from winners → Let Meta pick the best combination
+→ Scale the winner
+```
+
+**Tips:**
+- DCO requires a minimum of ~5,000 impressions per combination to produce reliable results — set budget high enough to get there within 7 days
+- Once a DCO winner emerges, extract the winning creative spec using `meta_get_creative_details` and use it in a standard ad set where you have more control over budget and targeting
+- Keep each DCO test focused on one variable at a time: either images OR headlines, not both simultaneously, if you want clean signal
+
+---
 
 | Task | Primary Tool(s) |
 |---|---|
@@ -1030,6 +1414,14 @@ What offers keep appearing? What creative formats are dominant — video or imag
 | Check a specific campaign | `meta_get_insights`, `meta_get_campaign` |
 | See breakdowns by age/gender/country | `meta_get_breakdown_insights` |
 | Why is an ad not delivering? | `meta_debug_ad` |
+| No purchases — find where funnel drops off | `meta_get_insights` (level: ad, check `conversion_breakdown`) |
+| Rank creatives by engagement before conversions | `meta_get_insights` (level: ad, sort by `outbound_clicks`) |
+| Analyse video hook performance | `meta_get_insights` (level: ad, `video.completion_rate`) |
+| Find unexpected high-performing demographics | `meta_get_breakdown_insights` (breakdown: age_gender, country) |
+| Identify best-performing placements | `meta_get_breakdown_insights` (breakdown: placement) |
+| Spot day-of-week/time-of-day patterns | `meta_get_breakdown_insights` (time_series: daily) |
+| Diagnose frequency/audience exhaustion | `meta_get_breakdown_insights` (time_series: daily, check frequency) |
+| Systematically test winning creative combinations | `meta_deploy_dco_campaign` |
 | Launch a new campaign | `meta_upload_image` then `meta_deploy_campaign` |
 | Add a creative variant | `meta_add_ad` |
 | Duplicate a campaign | `meta_duplicate_campaign` |
