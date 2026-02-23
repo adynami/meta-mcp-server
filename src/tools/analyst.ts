@@ -43,6 +43,11 @@ export const analystTools = [
           description: 'Aggregation level (default: account). Use "campaign" to see per-campaign breakdown rows.',
         },
         limit: { type: 'number', minimum: 1, maximum: 200, description: 'Max rows (default 50)' },
+        attribution_window: {
+          type: 'string',
+          enum: ['1d_click', '7d_click', '28d_click', '1d_view', '7d_view', '7d_click_1d_view', '28d_click_1d_view'],
+          description: 'Attribution window override. Default is the ad set\'s configured window. Use to compare performance across different attribution models.',
+        },
       },
     },
   },
@@ -80,6 +85,11 @@ If the user hasn't specified what breakdown or date range they want, ask them be
           type: 'string',
           enum: ['account', 'campaign', 'adset', 'ad'],
           description: 'Aggregation level (default: account)',
+        },
+        attribution_window: {
+          type: 'string',
+          enum: ['1d_click', '7d_click', '28d_click', '1d_view', '7d_view', '7d_click_1d_view', '28d_click_1d_view'],
+          description: 'Attribution window override for this report. Useful for comparing 1-day vs 7-day attribution models.',
         },
       },
     },
@@ -161,6 +171,7 @@ async function getBreakdownInsights(args: any): Promise<any> {
     time_increment,
     level: args.level ?? 'account',
     limit: args.limit ?? 50,
+    ...(args.attribution_window && { action_attribution_windows: [args.attribution_window] }),
   });
 
   const dimFields = args.breakdown ? DIMENSION_FIELDS[args.breakdown] : [];
@@ -194,6 +205,8 @@ async function getBreakdownInsights(args: any): Promise<any> {
       conversions: m.conversions,
       cpa: m.cpa,
       roas: m.roas,
+      ...(m.conversion_breakdown && { conversion_breakdown: m.conversion_breakdown }),
+      ...(m.conversion_value_breakdown && { conversion_value_breakdown: m.conversion_value_breakdown }),
       ...(m.video && { video: m.video }),
       ...(m.quality_ranking && { quality_ranking: m.quality_ranking }),
       ...(m.engagement_rate_ranking && { engagement_rate_ranking: m.engagement_rate_ranking }),
@@ -344,6 +357,7 @@ async function requestAsyncInsightsReport(args: any): Promise<any> {
     breakdowns,
     time_increment,
     level: args.level ?? 'account',
+    ...(args.attribution_window && { action_attribution_windows: [args.attribution_window] }),
   });
 
   // Poll until complete
@@ -382,6 +396,8 @@ async function requestAsyncInsightsReport(args: any): Promise<any> {
       conversions: m.conversions,
       cpa: m.cpa,
       roas: m.roas,
+      ...(m.conversion_breakdown && { conversion_breakdown: m.conversion_breakdown }),
+      ...(m.conversion_value_breakdown && { conversion_value_breakdown: m.conversion_value_breakdown }),
       ...(m.video && { video: m.video }),
     };
   });

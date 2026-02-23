@@ -18,6 +18,9 @@ import { pixelTools, handlePixelTool } from './tools/pixels.js';
 import { rulesTools, handleRulesTool } from './tools/rules.js';
 import { leadsTools, handleLeadsTool } from './tools/leads.js';
 import { libraryTools, handleLibraryTool } from './tools/library.js';
+import { conversionsTools, handleConversionsTool } from './tools/conversions.js';
+import { catalogTools, handleCatalogTool } from './tools/catalogs.js';
+import { testingTools, handleTestingTool } from './tools/testing.js';
 
 const ALL_TOOLS = [
   ...managementTools,
@@ -31,6 +34,9 @@ const ALL_TOOLS = [
   ...rulesTools,
   ...leadsTools,
   ...libraryTools,
+  ...conversionsTools,
+  ...catalogTools,
+  ...testingTools,
 ];
 
 const managementToolNames = new Set(managementTools.map(t => t.name));
@@ -44,9 +50,12 @@ const pixelToolNames = new Set(pixelTools.map(t => t.name));
 const rulesToolNames = new Set(rulesTools.map(t => t.name));
 const leadsToolNames = new Set(leadsTools.map(t => t.name));
 const libraryToolNames = new Set(libraryTools.map(t => t.name));
+const conversionsToolNames = new Set(conversionsTools.map(t => t.name));
+const catalogToolNames = new Set(catalogTools.map(t => t.name));
+const testingToolNames = new Set(testingTools.map(t => t.name));
 
 const server = new Server(
-  { name: 'meta-marketing-mcp', version: '1.1.0' },
+  { name: 'meta-marketing-mcp', version: '1.2.0' },
   { capabilities: { tools: {} } },
 );
 
@@ -82,6 +91,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       result = await handleLeadsTool(name, args ?? {});
     } else if (libraryToolNames.has(name)) {
       result = await handleLibraryTool(name, args ?? {});
+    } else if (conversionsToolNames.has(name)) {
+      result = await handleConversionsTool(name, args ?? {});
+    } else if (catalogToolNames.has(name)) {
+      result = await handleCatalogTool(name, args ?? {});
+    } else if (testingToolNames.has(name)) {
+      result = await handleTestingTool(name, args ?? {});
     } else {
       return {
         content: [{ type: 'text', text: `Unknown tool "${name}". Available: ${ALL_TOOLS.map(t => t.name).join(', ')}` }],
