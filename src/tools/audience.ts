@@ -10,12 +10,17 @@ import {
 export const audienceTools = [
   {
     name: 'meta_list_audiences',
-    description: 'List custom audiences in the ad account. Returns name, type, approximate size, and delivery status. Use when the user asks what audiences exist, wants to find an audience ID for targeting, or needs to check audience health.',
+    description: 'List custom audiences in the ad account. Returns name, type, approximate size, and delivery status. Use when the user asks what audiences exist, wants to find an audience ID for targeting, or needs to check audience health. Use response_format=concise when you only need IDs and names.',
     inputSchema: {
       type: 'object' as const,
       properties: {
         limit: { type: 'number', minimum: 1, maximum: 50, description: 'Max results (default 25)' },
         after: { type: 'string', description: 'Pagination cursor from a previous response' },
+        response_format: {
+          type: 'string',
+          enum: ['concise', 'detailed'],
+          description: 'concise = id+name+type only, detailed = all fields including size and delivery status (default: detailed)',
+        },
       },
     },
   },
@@ -118,6 +123,50 @@ export const audienceTools = [
     },
   },
   {
+    name: 'meta_create_engagement_audience',
+    description: `Create a custom audience of people who engaged with your Facebook Page or Instagram profile. Captures users who liked, commented, shared, clicked, or otherwise interacted — without needing a pixel. Great for warm retargeting audiences.
+
+Common engagement_type values for Pages:
+- page_engaged: any engagement (most inclusive)
+- page_liked: liked/followed the Page
+- page_post_engaged: engaged with any post
+- page_call_to_action_clicked: clicked a CTA button
+
+Common engagement_type values for Instagram:
+- ig_business_profile_all: any Instagram engagement
+- ig_business_profile_engaged: saved/commented/liked/replied
+- ig_business_profile_visited: visited the profile
+
+Always ask the user which Page or Instagram account and which engagement type before calling.`,
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        name: { type: 'string', description: 'Audience name' },
+        description: { type: 'string', description: 'Optional description' },
+        source_id: {
+          type: 'string',
+          description: 'Facebook Page ID or Instagram Business Account ID to base the audience on. Use meta_list_pages to find page IDs.',
+        },
+        source_type: {
+          type: 'string',
+          enum: ['page', 'instagram'],
+          description: 'Whether the source is a Facebook Page or Instagram account (default: page)',
+        },
+        engagement_type: {
+          type: 'string',
+          description: 'Type of engagement to include. For pages: page_engaged, page_liked, page_post_engaged, page_call_to_action_clicked. For Instagram: ig_business_profile_all, ig_business_profile_engaged, ig_business_profile_visited.',
+        },
+        retention_days: {
+          type: 'number',
+          minimum: 1,
+          maximum: 365,
+          description: 'Lookback window in days — how far back to include engagements (default: 30, max: 365)',
+        },
+      },
+      required: ['name', 'source_id', 'engagement_type'],
+    },
+  },
+  {
     name: 'meta_delete_audience',
     description: 'Permanently delete a custom audience. Cannot be undone. The audience will be removed from any active ad sets using it. Confirm with the user before calling.',
     inputSchema: {
@@ -136,6 +185,7 @@ export async function handleAudienceTool(name: string, args: any): Promise<any> 
     case 'meta_create_customer_audience': return createFromCustomerList(args);
     case 'meta_create_lookalike_audience': return createLookalike(args);
     case 'meta_create_website_audience': return createWebsiteAudience(args);
+    case 'meta_create_engagement_audience': return createEngagementAudience(args);
     case 'meta_delete_audience': return removeAudience(args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
@@ -143,19 +193,22 @@ export async function handleAudienceTool(name: string, args: any): Promise<any> 
 
 async function listAudiences(args: any): Promise<any> {
   const rows = await fetchAudiences({ limit: args.limit ?? 25, after: args.after });
+  const concise = args.response_format === 'concise';
   return {
-    audiences: rows.map((a: any) => ({
-      id: a.id,
-      name: a.name,
-      type: a.subtype,
-      approx_size: a.approximate_count_lower_bound != null
-        ? `${Number(a.approximate_count_lower_bound).toLocaleString()}–${Number(a.approximate_count_upper_bound ?? 0).toLocaleString()}`
-        : 'unknown',
-      source: a.data_source?.type ?? null,
-      delivery_status: a.delivery_status?.description ?? null,
-      created: a.time_created,
-      updated: a.time_updated,
-    })),
+    audiences: rows.map((a: any) => concise
+      ? { id: a.id, name: a.name, type: a.subtype }
+      : {
+          id: a.id,
+          name: a.name,
+          type: a.subtype,
+          approx_size: a.approximate_count_lower_bound != null
+            ? `${Number(a.approximate_count_lower_bound).toLocaleString()}–${Number(a.approximate_count_upper_bound ?? 0).toLocaleString()}`
+            : 'unknown',
+          source: a.data_source?.type ?? null,
+          delivery_status: a.delivery_status?.description ?? null,
+          created: a.time_created,
+          updated: a.time_updated,
+        }),
   };
 }
 
@@ -346,6 +399,51 @@ async function createWebsiteAudience(args: any): Promise<any> {
     include_rules: includeRules.length,
     exclude_rules: excludeRules.length,
     note: 'Website audience takes ~30 minutes to populate. Size depends on site traffic and retention window.',
+  };
+}
+
+async function createEngagementAudience(args: any): Promise<any> {
+  const retentionDays = args.retention_days ?? 30;
+  const retentionSeconds = retentionDays * 86400;
+  const sourceType = args.source_type ?? 'page';
+
+  if (config.dryRun) {
+    return {
+      dry_run: true,
+      message: `Simulated: create engagement audience "${args.name}" from ${sourceType} ${args.source_id} — ${args.engagement_type}, ${retentionDays}d`,
+    };
+  }
+
+  const rule = {
+    inclusions: {
+      operator: 'or',
+      rules: [{
+        event_sources: [{ id: args.source_id, type: sourceType }],
+        retention_seconds: retentionSeconds,
+        filter: {
+          operator: 'and',
+          filters: [{ field: 'event', operator: 'eq', value: args.engagement_type }],
+        },
+      }],
+    },
+  };
+
+  const result = await createCustomAudience({
+    name: args.name,
+    subtype: 'ENGAGEMENT',
+    ...(args.description && { description: args.description }),
+    rule: JSON.stringify(rule),
+  });
+
+  return {
+    success: true,
+    audience_id: result.id,
+    audience_name: args.name,
+    source_id: args.source_id,
+    source_type: sourceType,
+    engagement_type: args.engagement_type,
+    retention_days: retentionDays,
+    note: 'Engagement audience takes ~30 minutes to populate.',
   };
 }
 
