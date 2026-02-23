@@ -504,6 +504,121 @@ export async function getPixelStats(pixelId: string, params: Record<string, any>
 
 // ── Targeting Search ──
 
+export async function searchTargetingExtended(
+  type: string,
+  query: string,
+  opts: { class?: string; limit?: number } = {},
+): Promise<any[]> {
+  return rateLimitedCall(async () => {
+    const qp = new URLSearchParams({
+      access_token: config.accessToken,
+      type,
+      q: query,
+      limit: String(opts.limit ?? 25),
+    });
+    if (opts.class) qp.append('class', opts.class);
+    const url = `https://graph.facebook.com/${config.apiVersion}/search?${qp.toString()}`;
+    const response = await fetch(url);
+    const data = await response.json() as any;
+    if (!response.ok || data.error) {
+      const e = data.error ?? {};
+      throw new Error(e.message ?? `HTTP ${response.status}`);
+    }
+    return data.data ?? [];
+  });
+}
+
+export async function searchGeoLocations(
+  query: string,
+  locationTypes: string[],
+  limit: number,
+): Promise<any[]> {
+  return rateLimitedCall(async () => {
+    const qp = new URLSearchParams({
+      access_token: config.accessToken,
+      type: 'adgeolocation',
+      q: query,
+      limit: String(limit),
+    });
+    if (locationTypes.length) qp.append('location_types', JSON.stringify(locationTypes));
+    const url = `https://graph.facebook.com/${config.apiVersion}/search?${qp.toString()}`;
+    const response = await fetch(url);
+    const data = await response.json() as any;
+    if (!response.ok || data.error) {
+      const e = data.error ?? {};
+      throw new Error(e.message ?? `HTTP ${response.status}`);
+    }
+    return data.data ?? [];
+  });
+}
+
+export async function getInterestSuggestions(interestIds: string[], limit: number): Promise<any[]> {
+  return rateLimitedCall(async () => {
+    const qp = new URLSearchParams({
+      access_token: config.accessToken,
+      type: 'adinterestsuggestion',
+      interest_list: JSON.stringify(interestIds),
+      limit: String(limit),
+    });
+    const url = `https://graph.facebook.com/${config.apiVersion}/search?${qp.toString()}`;
+    const response = await fetch(url);
+    const data = await response.json() as any;
+    if (!response.ok || data.error) {
+      const e = data.error ?? {};
+      throw new Error(e.message ?? `HTTP ${response.status}`);
+    }
+    return data.data ?? [];
+  });
+}
+
+export async function estimateAudienceSize(
+  targetingSpec: any,
+  optimizationGoal: string,
+  dailyBudgetCents?: number,
+): Promise<any> {
+  return rateLimitedCall(async () => {
+    const qp = new URLSearchParams({
+      access_token: config.accessToken,
+      targeting_spec: JSON.stringify(targetingSpec),
+      optimization_goal: optimizationGoal,
+      ...(dailyBudgetCents != null ? { daily_budget: String(dailyBudgetCents) } : {}),
+    });
+    const url = `https://graph.facebook.com/${config.apiVersion}/${config.adAccountId}/delivery_estimate?${qp.toString()}`;
+    const response = await fetch(url);
+    const data = await response.json() as any;
+    if (!response.ok || data.error) {
+      const e = data.error ?? {};
+      throw new Error(e.message ?? `HTTP ${response.status}`);
+    }
+    return (data.data ?? [])[0] ?? null;
+  });
+}
+
+export async function getCreativeDetails(creativeId: string): Promise<any> {
+  return rateLimitedCall(async () => {
+    const qp = new URLSearchParams({
+      access_token: config.accessToken,
+      fields: 'id,name,thumbnail_url,image_url,object_story_spec,asset_feed_spec,status',
+    });
+    const url = `https://graph.facebook.com/${config.apiVersion}/${creativeId}?${qp.toString()}`;
+    const response = await fetch(url);
+    const data = await response.json() as any;
+    if (!response.ok || data.error) {
+      const e = data.error ?? {};
+      throw new Error(e.message ?? `HTTP ${response.status}`);
+    }
+    return data;
+  });
+}
+
+export async function downloadImageAsBase64(url: string): Promise<{ data: string; mimeType: string }> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to download image: HTTP ${response.status}`);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const mimeType = response.headers.get('content-type')?.split(';')[0] ?? detectMime(buffer);
+  return { data: buffer.toString('base64'), mimeType };
+}
+
 export async function searchTargeting(type: 'interest' | 'behavior', query: string): Promise<any[]> {
   return rateLimitedCall(async () => {
     const qp = new URLSearchParams({
@@ -629,6 +744,124 @@ export async function fetchInsightsReport(reportRunId: string, after?: string): 
       throw new Error(e.message ?? `HTTP ${response.status}`);
     }
     return { data: data.data ?? [], paging: data.paging };
+  });
+}
+
+// ── Media Library ──
+
+export async function listAdImages(params: { limit: number; after?: string }): Promise<{ data: any[]; paging?: any }> {
+  return rateLimitedCall(async () => {
+    const qp = new URLSearchParams({
+      access_token: config.accessToken,
+      fields: 'hash,name,url,width,height,status,created_time',
+      limit: String(params.limit),
+      ...(params.after ? { after: params.after } : {}),
+    });
+    const url = `https://graph.facebook.com/${config.apiVersion}/${config.adAccountId}/adimages?${qp.toString()}`;
+    const response = await fetch(url);
+    const data = await response.json() as any;
+    if (!response.ok || data.error) {
+      const e = data.error ?? {};
+      throw new Error(e.message ?? `HTTP ${response.status}`);
+    }
+    return { data: data.data ?? [], paging: data.paging };
+  });
+}
+
+export async function listAdVideos(params: { limit: number; after?: string }): Promise<{ data: any[]; paging?: any }> {
+  return rateLimitedCall(async () => {
+    const qp = new URLSearchParams({
+      access_token: config.accessToken,
+      fields: 'id,title,description,length,status,created_time,picture',
+      limit: String(params.limit),
+      ...(params.after ? { after: params.after } : {}),
+    });
+    const url = `https://graph.facebook.com/${config.apiVersion}/${config.adAccountId}/advideos?${qp.toString()}`;
+    const response = await fetch(url);
+    const data = await response.json() as any;
+    if (!response.ok || data.error) {
+      const e = data.error ?? {};
+      throw new Error(e.message ?? `HTTP ${response.status}`);
+    }
+    return { data: data.data ?? [], paging: data.paging };
+  });
+}
+
+export async function listPages(limit: number): Promise<any[]> {
+  return rateLimitedCall(async () => {
+    const qp = new URLSearchParams({
+      access_token: config.accessToken,
+      fields: 'id,name,category,fan_count,tasks',
+      limit: String(limit),
+    });
+    const url = `https://graph.facebook.com/${config.apiVersion}/me/accounts?${qp.toString()}`;
+    const response = await fetch(url);
+    const data = await response.json() as any;
+    if (!response.ok || data.error) {
+      const e = data.error ?? {};
+      throw new Error(e.message ?? `HTTP ${response.status}`);
+    }
+    return data.data ?? [];
+  });
+}
+
+export async function getAdDetails(adId: string): Promise<any> {
+  return rateLimitedCall(async () => {
+    const qp = new URLSearchParams({
+      access_token: config.accessToken,
+      fields: 'id,name,status,effective_status,configured_status,creative{id,name,thumbnail_url,object_story_spec,asset_feed_spec},adset_id,campaign_id,bid_amount,created_time,updated_time,tracking_specs',
+    });
+    const url = `https://graph.facebook.com/${config.apiVersion}/${adId}?${qp.toString()}`;
+    const response = await fetch(url);
+    const data = await response.json() as any;
+    if (!response.ok || data.error) {
+      const e = data.error ?? {};
+      const err = new Error(e.message ?? `HTTP ${response.status}`) as any;
+      err.response = { error: e };
+      throw err;
+    }
+    return data;
+  });
+}
+
+export async function getAdSetDetails(adSetId: string): Promise<any> {
+  return rateLimitedCall(async () => {
+    const qp = new URLSearchParams({
+      access_token: config.accessToken,
+      fields: 'id,name,status,effective_status,campaign_id,daily_budget,lifetime_budget,budget_remaining,bid_strategy,bid_amount,optimization_goal,billing_event,start_time,end_time,targeting,promoted_object,frequency_cap,pacing_type,attribution_spec,created_time,updated_time',
+    });
+    const url = `https://graph.facebook.com/${config.apiVersion}/${adSetId}?${qp.toString()}`;
+    const response = await fetch(url);
+    const data = await response.json() as any;
+    if (!response.ok || data.error) {
+      const e = data.error ?? {};
+      const err = new Error(e.message ?? `HTTP ${response.status}`) as any;
+      err.response = { error: e };
+      throw err;
+    }
+    return data;
+  });
+}
+
+export async function batchUpdateStatus(ids: string[], status: string): Promise<any[]> {
+  return rateLimitedCall(async () => {
+    const batch = ids.map(id => ({
+      method: 'POST',
+      relative_url: `${config.apiVersion}/${id}`,
+      body: `status=${encodeURIComponent(status)}&access_token=${encodeURIComponent(config.accessToken)}`,
+    }));
+    const formBody = new URLSearchParams({
+      access_token: config.accessToken,
+      batch: JSON.stringify(batch),
+    });
+    const response = await fetch('https://graph.facebook.com/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formBody.toString(),
+    });
+    const data = await response.json() as any;
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return Array.isArray(data) ? data : [];
   });
 }
 

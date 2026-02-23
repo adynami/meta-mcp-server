@@ -63,11 +63,16 @@ async function graphDelete(objectPath: string): Promise<any> {
 export const rulesTools = [
   {
     name: 'meta_list_rules',
-    description: 'List automated rules configured in the ad account. Returns rule name, status, action type, conditions, and schedule. Use to review what automation is currently running before creating or deleting rules.',
+    description: 'List automated rules configured in the ad account. Returns rule name, status, action type, conditions, and schedule. Use to review what automation is currently running before creating or deleting rules. Use response_format=concise when you only need IDs and names.',
     inputSchema: {
       type: 'object' as const,
       properties: {
         limit: { type: 'number', minimum: 1, maximum: 50, description: 'Max results (default 25)' },
+        response_format: {
+          type: 'string',
+          enum: ['concise', 'detailed'],
+          description: 'concise = id+name+status only, detailed = all fields including conditions and schedule (default: detailed)',
+        },
       },
     },
   },
@@ -141,6 +146,23 @@ This is a write operation — confirm all details before calling.`,
     },
   },
   {
+    name: 'meta_update_rule',
+    description: 'Enable, disable, or rename an automated rule. Use to pause/resume a rule without permanently deleting it.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        rule_id: { type: 'string', description: 'Rule ID to update (from meta_list_rules)' },
+        status: {
+          type: 'string',
+          enum: ['ENABLED', 'DISABLED'],
+          description: 'New status for the rule',
+        },
+        name: { type: 'string', description: 'New name for the rule (optional)' },
+      },
+      required: ['rule_id'],
+    },
+  },
+  {
     name: 'meta_delete_rule',
     description: 'Permanently delete an automated rule. The rule stops executing immediately. Cannot be undone. Always confirm with the user before calling.',
     inputSchema: {
@@ -159,6 +181,7 @@ export async function handleRulesTool(name: string, args: any): Promise<any> {
   switch (name) {
     case 'meta_list_rules': return listRules(args);
     case 'meta_create_rule': return createRule(args);
+    case 'meta_update_rule': return updateRule(args);
     case 'meta_delete_rule': return deleteRule(args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
@@ -174,18 +197,21 @@ async function listRules(args: any): Promise<any> {
     }),
   );
 
-  const rules = (result.data ?? []).map((r: any) => ({
-    id: r.id,
-    name: r.name,
-    status: r.status,
-    entity_type: r.entity_type,
-    action: r.execution_spec?.execution_type,
-    schedule: r.schedule_spec?.schedule,
-    evaluation_window: r.evaluation_spec?.evaluation_window,
-    conditions: (r.evaluation_spec?.filters ?? []).map(
-      (f: any) => `${f.field} ${f.operator} ${f.value?.value ?? f.value}`,
-    ),
-  }));
+  const concise = args.response_format === 'concise';
+  const rules = (result.data ?? []).map((r: any) => concise
+    ? { id: r.id, name: r.name, status: r.status }
+    : {
+        id: r.id,
+        name: r.name,
+        status: r.status,
+        entity_type: r.entity_type,
+        action: r.execution_spec?.execution_type,
+        schedule: r.schedule_spec?.schedule,
+        evaluation_window: r.evaluation_spec?.evaluation_window,
+        conditions: (r.evaluation_spec?.filters ?? []).map(
+          (f: any) => `${f.field} ${f.operator} ${f.value?.value ?? f.value}`,
+        ),
+      });
 
   return { rules, total: rules.length };
 }
@@ -247,6 +273,27 @@ async function createRule(args: any): Promise<any> {
     schedule,
     evaluation_window: evaluationWindow,
     conditions_count: args.conditions.length,
+  };
+}
+
+async function updateRule(args: any): Promise<any> {
+  if (!args.status && !args.name) {
+    return { success: false, error: 'Provide at least one of: status or name to update.' };
+  }
+  if (config.dryRun) {
+    return { dry_run: true, message: `Simulated: update rule ${args.rule_id}${args.status ? ` → ${args.status}` : ''}${args.name ? ` rename to "${args.name}"` : ''}` };
+  }
+
+  const updates: Record<string, any> = {};
+  if (args.status) updates.status = args.status;
+  if (args.name) updates.name = args.name;
+
+  await rateLimitedCall(() => graphPost(args.rule_id, updates));
+  return {
+    success: true,
+    rule_id: args.rule_id,
+    ...(args.status && { status: args.status }),
+    ...(args.name && { name: args.name }),
   };
 }
 
