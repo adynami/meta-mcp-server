@@ -20,6 +20,7 @@ Practical examples of what you can accomplish with the Meta MCP Server. Each sce
 12. [Value Rules — Advanced Bid Adjustment](#12-value-rules--advanced-bid-adjustment)
 13. [High Demand Periods — Scheduled Budget Boosts](#13-high-demand-periods--scheduled-budget-boosts)
 14. [Creative Intelligence & The Campaign Iteration Loop](#14-creative-intelligence--the-campaign-iteration-loop)
+15. [UGC Video Ad Pipeline](#15-ugc-video-ad-pipeline)
 
 ---
 
@@ -1847,6 +1848,214 @@ Which creative won in campaign [ID]? Give me the brief for the next iteration.
 - Week 2: Scale the winner, pause losers, test winner variant
 - Week 3: Iterate on the variant, introduce new hook from competitor brief
 - Result: A self-improving creative system driven by real performance data
+
+---
+
+## 15. UGC Video Ad Pipeline
+
+Generate data-driven UGC-style video ads using account performance signals. This section covers workflows that connect Meta campaign analytics to the [`ugc-pipeline`](https://github.com/adynami/ugc-pipeline) — an AI video factory that produces 30-second vertical ads in cinematic and talking-head modes.
+
+**Prerequisites:**
+- `ugc-pipeline` cloned and configured locally (`FAL_KEY`, `ELEVENLABS_API_KEY`, etc.)
+- The workflows below produce a JSON angle config that feeds directly into `python generate.py`
+
+---
+
+### 15.1 Generate a UGC Angle from Account Performance Data
+
+**Scenario:** Your top-of-funnel campaigns have been running for 30 days. You want to generate a new UGC video angle grounded in what the data says is resonating — not guesswork.
+
+**Conversation with Claude:**
+
+```
+"Pull the last 30 days of account performance broken down by age and gender.
+Identify the highest-CTR demographic and the ad copy that drove the most
+link clicks. Then generate a creative brief for a new UGC video angle
+targeting that audience."
+```
+
+**Tools used:**
+1. `meta_get_breakdown_insights` (age, gender breakdown)
+2. `meta_get_ad_insights` (ad-level CTR, link clicks)
+3. `meta_generate_creative_brief` (signal_type: from_analytics)
+
+**Output — brief fed to ugc-pipeline:**
+
+```json
+{
+  "product": "walking rewards app",
+  "objective": "OUTCOME_LEADS",
+  "audience": "Women 35–54, engaged with fitness/wellness content",
+  "angle": "The embarrassment that finally made her move — paid to do it",
+  "hook_style": "before_after",
+  "visual_direction": "close-up podcast talking-head, desaturated → warm progression",
+  "copy_direction": "lead with specific visceral moment, not generic health claim",
+  "key_benefits": ["15 minutes walking", "earn rewards", "no gym required"],
+  "formats": ["9:16", "4:5"],
+  "variants_to_test": 3
+}
+```
+
+**Generate the video:**
+```bash
+python generate.py --generate-angle
+# or feed the brief directly by editing configs/angles/new_angle.json
+python generate.py configs/angles/new_angle.json --mode cinematic
+```
+
+---
+
+### 15.2 Identify a Hook Gap from Competitor Ads, Then Film It
+
+**Scenario:** You want to find an emotional hook angle that competitors aren't using, then generate a UGC ad around it.
+
+**Conversation with Claude:**
+
+```
+"Search the Ad Library for [competitor/category] ads that have been
+running more than 30 days. Identify which hook styles they're using most
+heavily and find a gap — an angle they're NOT running. Generate a UGC
+creative brief for that gap angle."
+```
+
+**Tools used:**
+1. `meta_search_ad_library` (search_terms, active_only: true, limit: 30)
+2. `meta_generate_creative_brief` (signal_type: from_competitor)
+
+**What the brief captures:**
+
+The brief will note which hooks competitors are saturating (e.g., "stat" and "benefit" hooks dominate competitor ads) and recommend the gap (e.g., "pattern_interrupt" or "before_after" hooks are underused). The visual direction and copy direction will explicitly address the white space.
+
+**Generate the video:**
+```bash
+python generate.py configs/angles/competitor_gap_angle.json --mode cinematic
+# 9:16 and 4:5 variants auto-exported
+```
+
+---
+
+### 15.3 Performance → Next UGC Angle (Closing the Loop)
+
+**Scenario:** Your current UGC cinematic ad has been live for 7 days. You want to analyze what worked, then generate the next iteration as a new angle config.
+
+**Conversation with Claude:**
+
+```
+"Analyze creative performance on campaign [ID] over the last 7 days.
+Tell me which ad won, why it won, and what the next UGC angle should be.
+Format the output as a ugc-pipeline JSON config I can run directly."
+```
+
+**Tools used:**
+1. `meta_analyze_creative_performance` (campaign_id, time_range: last_7d)
+
+**Expected output:**
+
+```json
+{
+  "winner": {
+    "ad_name": "Hook — airplane seatbelt",
+    "hypothesis": "Specific physical embarrassment hook outperformed generic health claim by 2.3× CTR. Short scene 1 under 10 words drove higher scroll-stop rate."
+  },
+  "learning": "Visceral specificity beats benefit statements for this audience",
+  "next_brief": {
+    "angle": "A different specific shame moment — scaled to the next trigger",
+    "hook_style": "pattern_interrupt",
+    "variants_to_test": 3
+  }
+}
+```
+
+**Generate the next iteration:**
+```bash
+# Save next_brief as a new angle config, then run
+python generate.py configs/angles/iteration_2.json --mode cinematic --captions
+```
+
+---
+
+### 15.4 Talking-Head Ad from Performance Data
+
+**Scenario:** Analytics show your best-performing audience responds to personal testimony. You want to generate a talking-head style UGC ad (avatar + B-roll) for a specific demographic segment.
+
+**Conversation with Claude:**
+
+```
+"Which age and placement combination had the best CPA last month?
+Generate a creative brief for a talking-head UGC ad optimized for that
+placement. Include visual and pacing notes appropriate for that format."
+```
+
+**Tools used:**
+1. `meta_get_breakdown_insights` (age, placement breakdown, last_30d)
+2. `meta_generate_creative_brief` (signal_type: from_analytics)
+
+**Run talking-head pipeline:**
+```bash
+python generate.py configs/angles/testimony_angle.json \
+  --mode talking_head \
+  --avatar-id <heygen_avatar_id> \
+  --voice-id <elevenlabs_voice_id> \
+  --music assets/music/emotional.mp3 \
+  --captions
+# → output/final/testimony_angle_th_9x16.mp4
+# → output/final/testimony_angle_th_4x5.mp4
+```
+
+The talking-head mode is particularly effective for the 35–54 female demographic when the avatar matches the target persona — it reads as authentic testimony rather than produced advertising.
+
+---
+
+### 15.5 Batch UGC Variants from Top Creative Signals
+
+**Scenario:** You want to systematically scale your creative testing — pull the top 5 performing hook angles from the last 90 days and generate a full batch of UGC variants to test in parallel.
+
+**Conversation with Claude:**
+
+```
+"Pull ad-level performance for the last 90 days. Identify the top 5
+ads by CTR with at least 1000 impressions each. Extract the hook from
+each ad's copy and generate 5 new UGC angle configs — one per hook,
+with fresh dialogue — formatted for ugc-pipeline batch processing."
+```
+
+**Tools used:**
+1. `meta_get_ad_insights` (last_90d, filtering by impressions ≥ 1000)
+2. `meta_generate_creative_brief` × 5 (once per winning hook signal)
+3. `meta_generate_ad_copy` × 5 (generate fresh dialogue for each angle)
+
+**Batch generate all 5 angles:**
+```bash
+python batch.py --configs configs/angles/ --mode cinematic --workers 3
+# Processes all 5 in parallel (3 concurrent)
+# → output/batch/ with 9:16 and 4:5 variants for each
+```
+
+**What this produces:**
+- 5 × 30-second cinematic videos
+- 5 × 4:5 crop variants (10 files total)
+- Each angle grounded in a real CTR signal from your account data — not guesswork
+
+**Deploy as a DCO test once videos are ready:**
+```
+"Upload all 5 video variants and launch a DCO campaign to split-test them
+against the 35-54 women audience, $50/day, OUTCOME_LEADS objective."
+→ meta_upload_video × 5
+→ meta_deploy_dco_campaign
+```
+
+---
+
+### UGC Pipeline Quick Reference
+
+| Goal | Meta MCP tools | ugc-pipeline command |
+|---|---|---|
+| Generate angle from account data | `meta_account_intelligence` → `meta_generate_creative_brief` | `python generate.py <config.json>` |
+| Find competitor gap angle | `meta_search_ad_library` → `meta_generate_creative_brief` | `python generate.py <config.json>` |
+| Iterate on a winning ad | `meta_analyze_creative_performance` | `python generate.py <config.json> --mode cinematic` |
+| Talking-head for testimony angles | `meta_get_breakdown_insights` → `meta_generate_creative_brief` | `python generate.py <config.json> --mode talking_head` |
+| Batch test 5 angles at once | `meta_get_ad_insights` × N → `meta_generate_ad_copy` × N | `python batch.py --configs configs/angles/` |
+| Deploy finished videos | — | `meta_upload_video` → `meta_deploy_dco_campaign` |
 
 ---
 
