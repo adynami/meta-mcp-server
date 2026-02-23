@@ -48,6 +48,10 @@ export function clearAccountCache(): void {
 const INSIGHT_FIELDS = [
   'impressions', 'clicks', 'spend', 'cpm', 'frequency', 'reach',
   'actions', 'action_values',
+  // Unique / link metrics
+  'unique_clicks', 'unique_ctr', 'unique_link_clicks_ctr',
+  'outbound_clicks', 'outbound_clicks_ctr',
+  'inline_link_clicks', 'inline_link_click_ctr',
   // Video engagement
   'video_p25_watched_actions', 'video_p50_watched_actions',
   'video_p75_watched_actions', 'video_p100_watched_actions',

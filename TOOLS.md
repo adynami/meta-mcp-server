@@ -258,9 +258,330 @@ Returns: `{ new_campaign_id, status: 'PAUSED', message }`
 
 ---
 
+---
+
+## New Tools (v1.2.0)
+
+### Account & Billing
+
+#### `meta_get_account_billing`
+Get billing and spend information for the ad account.
+
+**No parameters required.**
+
+Returns: `{ currency, amount_spent, spend_cap, remaining, balance, funding_source }`
+
+---
+
+#### `meta_get_recommendations`
+Get Meta's automated optimization recommendations.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `limit` | number | 10 |
+
+Returns: `{ recommendations: [{ title, message, importance, confidence, blame_field, code, estimated_daily_results }], total }`
+
+---
+
+### Ad Inspection
+
+#### `meta_get_ad_details`
+Full details for a single ad including creative spec, bid, and parent IDs.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `ad_id` | string | Yes |
+
+---
+
+#### `meta_get_adset_details`
+Full details for a single ad set including targeting, budget, bid strategy, and schedule.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `adset_id` | string | Yes |
+
+---
+
+#### `meta_get_creative_details`
+Full creative spec (object_story_spec, asset_feed_spec for DCO) for an ad creative.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `creative_id` | string | Yes |
+
+---
+
+#### `meta_get_ad_preview`
+Generate a preview URL and iframe snippet for an ad.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `ad_id` | string | Required |
+| `ad_format` | string | `DESKTOP_FEED_STANDARD` |
+
+Available formats: `DESKTOP_FEED_STANDARD`, `MOBILE_FEED_STANDARD`, `INSTAGRAM_STANDARD`, `INSTAGRAM_STORY`, `FACEBOOK_STORY_MOBILE`, `MARKETPLACE_MOBILE`, and more.
+
+Returns: `{ ad_id, format, iframe_snippet, shareable_link }`
+
+---
+
+### Account Tools
+
+#### `meta_list_pages`
+List Facebook Pages connected to the access token.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `limit` | number | 25 |
+
+---
+
+#### `meta_predict_reach`
+Model daily reach curve at a given budget.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `targeting` | object | Yes |
+| `daily_budget_usd` | number | No |
+| `optimization_goal` | string | No |
+
+---
+
+#### `meta_bulk_update_status`
+Update status of multiple campaigns, ad sets, or ads in one call.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `ids` | string[] | Yes (1–50) |
+| `status` | string | Yes — `ACTIVE`, `PAUSED`, `ARCHIVED` |
+
+---
+
+### Campaign Creation Enhancements (v1.2.0)
+
+`meta_deploy_campaign` now accepts:
+
+| New Parameter | Type | Notes |
+|---|---|---|
+| `special_ad_categories` | string[] | `CREDIT`, `EMPLOYMENT`, `HOUSING`, `ISSUES_ELECTIONS_POLITICS` — declare for regulated ads |
+| `destination_type` | string | `WEBSITE`, `MESSENGER`, `WHATSAPP`, `INSTAGRAM_DIRECT`, `APP`, `ON_AD` |
+| `url_tags` | string | UTM parameters appended to destination URL (e.g. `utm_source=facebook&utm_campaign=summer`) |
+| `custom_event_type` | string | Override conversion event: `PURCHASE`, `LEAD`, `COMPLETE_REGISTRATION`, `ADD_TO_CART`, etc. |
+
+`meta_update_campaign` now accepts: `special_ad_categories`
+
+`meta_update_adset` now accepts: `destination_type`, `attribution_spec`
+
+---
+
+### Audience Tools (v1.2.0)
+
+#### `meta_create_engagement_audience`
+Audience of people who engaged with a Facebook Page or Instagram profile.
+
+| Parameter | Type | Required | Notes |
+|---|---|---|---|
+| `name` | string | Yes | |
+| `source_id` | string | Yes | Page or Instagram account ID |
+| `source_type` | string | No | `page` or `instagram` (default: `page`) |
+| `engagement_type` | string | Yes | e.g. `page_engaged`, `ig_business_profile_all` |
+| `retention_days` | number | No | 1–365 (default: 30) |
+
+---
+
+#### `meta_create_video_audience`
+Retarget people who watched a percentage of a video.
+
+| Parameter | Type | Required | Notes |
+|---|---|---|---|
+| `name` | string | Yes | |
+| `video_id` | string | Yes | |
+| `engagement_type` | string | Yes | `video_opened`, `video_25_watched`, `video_50_watched`, `video_75_watched`, `video_95_watched` |
+| `retention_days` | number | No | 1–365 (default: 30) |
+
+---
+
+### Automated Rules (v1.2.0)
+
+#### `meta_update_rule`
+Enable, disable, or rename a rule.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `rule_id` | string | Yes |
+| `status` | string | No — `ENABLED` or `DISABLED` |
+| `name` | string | No |
+
+---
+
+### Lead Form Enhancements (v1.2.0)
+
+`meta_create_lead_form` now accepts:
+
+| New Parameter | Type | Notes |
+|---|---|---|
+| `locale` | string | Form display language: `en_US`, `es_ES`, `fr_FR`, `de_DE`, `pt_BR`, `ja_JP`, etc. |
+| `is_optimized_for_quality` | boolean | Adds friction to filter low-intent users — lowers volume, improves quality |
+| question `type: MULTIPLE_CHOICE` | — | Dropdown/radio question; provide `options: string[]` |
+
+---
+
+### Analytics Enhancements (v1.2.0)
+
+`meta_get_breakdown_insights` and `meta_request_insights_report` now accept:
+
+| New Parameter | Type | Notes |
+|---|---|---|
+| `attribution_window` | string | `1d_click`, `7d_click`, `28d_click`, `1d_view`, `7d_view`, `7d_click_1d_view`, `28d_click_1d_view` |
+
+Insight responses now include (when non-zero): `unique_clicks`, `unique_ctr`, `outbound_clicks`, `conversion_breakdown`, `conversion_value_breakdown`.
+
+---
+
+### Conversions API (CAPI)
+
+#### `meta_send_conversions_event`
+Send a server-side event to a Meta Pixel with automatic SHA-256 PII hashing.
+
+| Parameter | Type | Required | Notes |
+|---|---|---|---|
+| `pixel_id` | string | Yes | |
+| `event_name` | string | Yes | `Purchase`, `Lead`, `ViewContent`, `AddToCart`, `InitiateCheckout`, `CompleteRegistration`, `Subscribe`, `StartTrial` |
+| `event_time` | number | No | Unix timestamp (default: now) |
+| `event_source_url` | string | No | Page URL where the event occurred |
+| `value` | number | No | Order/event value (for Purchase) |
+| `currency` | string | No | ISO 4217 (default: `USD`) |
+| `email` | string | No | Hashed automatically |
+| `phone` | string | No | Hashed automatically |
+| `first_name` | string | No | Hashed automatically |
+| `last_name` | string | No | Hashed automatically |
+| `city` | string | No | Hashed automatically |
+| `state` | string | No | Hashed automatically |
+| `zip` | string | No | Hashed automatically |
+| `country` | string | No | Hashed automatically |
+| `external_id` | string | No | Hashed automatically |
+| `client_ip_address` | string | No | Sent unhashed |
+| `client_user_agent` | string | No | Sent unhashed |
+| `fbc` | string | No | Facebook click ID cookie |
+| `fbp` | string | No | Facebook browser ID cookie |
+| `event_id` | string | No | Deduplication ID (match browser event `eventID`) |
+| `test_event_code` | string | No | Use with Meta Events Manager test tool |
+| `action_source` | string | No | `website`, `app`, `phone_call`, `chat`, `email`, `other` (default: `website`) |
+
+---
+
+### Product Catalogs (DPA)
+
+#### `meta_list_product_catalogs`
+List all product catalogs in the ad account.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `limit` | number | 10 |
+
+Returns: `{ catalogs: [{ id, name, vertical, product_count }] }`
+
+---
+
+#### `meta_get_catalog`
+Get details for a specific catalog.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `catalog_id` | string | Yes |
+
+---
+
+#### `meta_list_catalog_products`
+Browse products in a catalog.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `catalog_id` | string | Required |
+| `limit` | number | 20 |
+| `filter_availability` | string | — (`in stock`, `out of stock`, `preorder`, `available for order`) |
+| `search` | string | — (search by name/description) |
+
+---
+
+#### `meta_list_product_sets`
+List product sets (filtered subsets) within a catalog.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `catalog_id` | string | Yes |
+| `limit` | number | No (default: 10) |
+
+---
+
+### A/B Testing
+
+#### `meta_list_ab_tests`
+List A/B split tests in the ad account.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `limit` | number | 10 |
+
+---
+
+#### `meta_create_ab_test`
+Create a 50/50 split test between two campaigns.
+
+| Parameter | Type | Required | Notes |
+|---|---|---|---|
+| `name` | string | Yes | |
+| `campaign_a_id` | string | Yes | Control campaign (should be PAUSED) |
+| `campaign_b_id` | string | Yes | Variant campaign (should be PAUSED) |
+| `variable` | string | Yes | `CREATIVE`, `PLACEMENT`, `TARGETING`, `BUDGET_OPTIMIZATION` |
+| `optimization_metric` | string | No | `COST_PER_RESULT` (default) or `ROAS` |
+| `end_time` | string | No | ISO 8601 (7+ days recommended) |
+| `confidence_level` | number | No | `0.90`, `0.95` (default), or `0.99` |
+
+Returns: `{ success, test_id, name, variable, optimization_metric, confidence_level, campaign_a, campaign_b, end_time }`
+
+---
+
+### Creative Library & Ads Library
+
+#### `meta_list_ad_images`
+Browse uploaded ad images in the account.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `limit` | number | 25 |
+| `after` | string | — |
+
+---
+
+#### `meta_list_ad_videos`
+Browse uploaded ad videos in the account.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `limit` | number | 25 |
+| `after` | string | — |
+
+---
+
+#### `meta_search_ads_library`
+Search the Meta Ads Library for competitor intelligence.
+
+| Parameter | Type | Required |
+|---|---|---|
+| `search_terms` | string | Yes |
+| `ad_reached_countries` | string[] | No (default: `["US"]`) |
+| `ad_type` | string | No (`ALL`, `POLITICAL_AND_ISSUE_ADS`) |
+| `limit` | number | No (default: 10) |
+
+---
+
 ## Architecture Notes
 
-- **API**: Meta Graph API v25.0, called directly via `fetch` (bypasses the FB Node SDK, which mangles nested objects during serialization)
+- **API**: Meta Graph API v25.0, called via the Facebook Business SDK and direct `fetch` for endpoints not in the SDK
 - **Rate limiting**: All API calls go through a shared rate limiter (`utils/rate-limiter.ts`)
 - **DRY_RUN**: Set `DRY_RUN=true` in env to simulate all write operations without touching the API
 - **Error handling**: Meta API errors are extracted and formatted with human-readable titles. Auth errors (code 190) prompt re-authentication; rate limits (code 4/17) suggest retry; permission errors (code 10) flag token scope issues.
+- **PII hashing**: All PII fields (email, phone, name, address) are SHA-256 hashed before leaving the server (conversions.ts, audience.ts)
