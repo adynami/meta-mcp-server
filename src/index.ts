@@ -23,6 +23,10 @@ import { catalogTools, handleCatalogTool } from './tools/catalogs.js';
 import { testingTools, handleTestingTool } from './tools/testing.js';
 import { valueRulesTools, handleValueRulesTool } from './tools/value-rules.js';
 import { budgetScheduleTools, handleBudgetScheduleTool } from './tools/budget-schedules.js';
+import { copyTools, handleCopyTool } from './tools/copy.js';
+import { briefTools, handleBriefTool } from './tools/brief.js';
+import { adLibraryTools, handleAdLibraryTool } from './tools/adlibrary.js';
+import { performanceTools, handlePerformanceTool } from './tools/performance.js';
 
 const ALL_TOOLS = [
   ...managementTools,
@@ -41,6 +45,10 @@ const ALL_TOOLS = [
   ...testingTools,
   ...valueRulesTools,
   ...budgetScheduleTools,
+  ...copyTools,
+  ...briefTools,
+  ...adLibraryTools,
+  ...performanceTools,
 ];
 
 const managementToolNames = new Set(managementTools.map(t => t.name));
@@ -59,6 +67,10 @@ const catalogToolNames = new Set(catalogTools.map(t => t.name));
 const testingToolNames = new Set(testingTools.map(t => t.name));
 const valueRulesToolNames = new Set(valueRulesTools.map(t => t.name));
 const budgetScheduleToolNames = new Set(budgetScheduleTools.map(t => t.name));
+const copyToolNames = new Set(copyTools.map(t => t.name));
+const briefToolNames = new Set(briefTools.map(t => t.name));
+const adLibraryToolNames = new Set(adLibraryTools.map(t => t.name));
+const performanceToolNames = new Set(performanceTools.map(t => t.name));
 
 const server = new Server(
   { name: 'meta-marketing-mcp', version: '1.4.0' },
@@ -107,6 +119,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       result = await handleValueRulesTool(name, args ?? {});
     } else if (budgetScheduleToolNames.has(name)) {
       result = await handleBudgetScheduleTool(name, args ?? {});
+    } else if (copyToolNames.has(name)) {
+      result = await handleCopyTool(name, args ?? {});
+    } else if (briefToolNames.has(name)) {
+      result = await handleBriefTool(name, args ?? {});
+    } else if (adLibraryToolNames.has(name)) {
+      result = await handleAdLibraryTool(name, args ?? {});
+    } else if (performanceToolNames.has(name)) {
+      result = await handlePerformanceTool(name, args ?? {});
     } else {
       return {
         content: [{ type: 'text', text: `Unknown tool "${name}". Available: ${ALL_TOOLS.map(t => t.name).join(', ')}` }],

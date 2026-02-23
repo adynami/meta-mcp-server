@@ -19,6 +19,7 @@ Practical examples of what you can accomplish with the Meta MCP Server. Each sce
 11. [Zero-Conversion Diagnostics & Creative Iteration](#11-zero-conversion-diagnostics--creative-iteration)
 12. [Value Rules — Advanced Bid Adjustment](#12-value-rules--advanced-bid-adjustment)
 13. [High Demand Periods — Scheduled Budget Boosts](#13-high-demand-periods--scheduled-budget-boosts)
+14. [Creative Intelligence & The Campaign Iteration Loop](#14-creative-intelligence--the-campaign-iteration-loop)
 
 ---
 
@@ -1669,6 +1670,183 @@ Rule 2: age i_contains [18-24]        → multiplier: 0.75, priority: 2
 - Min 3 hours per period
 - ABSOLUTE max = 8× daily budget
 - Max 50 schedules per campaign, no overlaps
+
+---
+
+---
+
+## 14. Creative Intelligence & The Campaign Iteration Loop
+
+*Requires `GEMINI_API_KEY` in the meta-mcp-server environment. Works best when paired with image-gen-mcp.*
+
+The creative intelligence tools form a closed feedback loop: analyse what's working → generate a data-driven brief → produce copy and creative → deploy → analyse again. Claude orchestrates the entire sequence.
+
+---
+
+### 14.1 Generate Ad Copy from Scratch
+
+**Scenario:** You have a new product and need Meta-ready copy without writing it yourself.
+
+**Claude prompts:**
+```
+Generate 3 ad copy variants for our project management SaaS. Target marketing managers.
+Use a stat hook. We need leads.
+```
+
+```
+Write DCO-ready copy for our summer sale. 5 variants, benefit hook, warm and direct brand voice.
+```
+
+**Tools called:**
+- `meta_generate_ad_copy` — returns variants with character counts, `body_truncated_preview` (what shows before "See more"), and a `dco_ready` object with headline/body arrays ready to pass to `meta_deploy_dco_campaign`
+
+**Example output:**
+```json
+{
+  "variants": [{
+    "headline": "Cut Reporting Time by 80%",
+    "headline_chars": 24,
+    "body": "Marketing managers save 6 hours/week with automated dashboards. 14-day free trial.",
+    "body_chars": 82,
+    "call_to_action": "START_TRIAL",
+    "hook_used": "stat"
+  }],
+  "dco_ready": {
+    "headlines": ["Cut Reporting Time by 80%", "..."],
+    "bodies": ["Marketing managers save 6 hours/week...", "..."]
+  }
+}
+```
+
+**Tips:**
+- `variants: 3–5` gives you DCO-ready material in one call
+- Character counts flag headlines that will be truncated before you upload anything
+- Hook frameworks: `question`, `stat`, `before_after`, `fomo`, `benefit`, `pattern_interrupt`
+
+---
+
+### 14.2 Generate a Creative Brief from Account Data
+
+**Scenario:** You've been running campaigns for a month. You want a data-driven brief for what to test next — not a gut guess.
+
+**Claude prompts:**
+```
+Pull last 30 days of account data and generate a creative brief for what to test next.
+```
+
+```
+Generate a creative brief based on our account performance. Focus on what's working and what's fatiguing.
+```
+
+**Tools called:**
+1. `meta_account_intelligence` — generates period-over-period summary with top and bottom performers
+2. `meta_generate_creative_brief` (signal_type: `from_analytics`) — Gemini analyses the intelligence output and produces a structured brief
+
+**Returns:** Brief with `hook_style`, `visual_direction`, `copy_direction`, `formats`, `reasoning`, `next_step`.
+
+---
+
+### 14.3 Generate a Competitor Brief
+
+**Scenario:** A new competitor is running heavily. You want to understand their creative strategy and find the gap in their messaging.
+
+**Claude prompts:**
+```
+Search the Ads Library for [competitor brand], then generate a creative brief based on the gap in their messaging.
+```
+
+```
+What creative angles is [brand] NOT using? Build a brief around the gap.
+```
+
+**Tools called:**
+1. `meta_search_ad_library` — searches `/ads_archive`, normalises results with run duration signals
+2. `meta_generate_creative_brief` (signal_type: `from_competitor`) — identifies gaps and recommends angles to exploit
+
+**What Claude does:**
+- Identifies which ads have been running longest (spend proxy = `long_runner_likely_profitable`)
+- Spots repeated patterns (the angles the competitor keeps going back to)
+- Recommends angles they're NOT covering — the white space in the market
+
+---
+
+### 14.4 Close the Loop — Analyse Creative Performance
+
+**Scenario:** A campaign has been running 7+ days. You want to know what won, what failed, and exactly what to test next.
+
+**Claude prompts:**
+```
+Analyse creative performance for campaign 120215... and tell me what to test next.
+```
+
+```
+Which creative won in campaign [ID]? Give me the brief for the next iteration.
+```
+
+**Tools called:**
+1. `meta_analyze_creative_performance` — fetches ad-level insights, ranks by primary metric, passes to Gemini for synthesis
+2. Gemini returns: winner hypothesis, loser diagnosis, `next_brief`
+3. *(Optional)* `meta_generate_creative_brief` with `next_brief` → triggers the next iteration
+
+**Example synthesis output:**
+```json
+{
+  "winner": {
+    "ad_name": "Before-After Hook v2",
+    "hypothesis": "The 'before' pain state resonated strongly — copy opened with the problem, not the solution. The 4:5 format captured more feed real estate on mobile."
+  },
+  "losers": [{
+    "ad_name": "Feature List v1",
+    "diagnosis": "Feature-led copy without emotional hook. Low scroll-stop rate.",
+    "action": "pause"
+  }],
+  "learning": "Pain-first hooks outperform feature lists 2:1 for this audience.",
+  "confidence": "high",
+  "next_brief": {
+    "angle": "Deepen the pain-first hook with a specific time cost",
+    "hook_style": "before_after",
+    "formats": ["4:5", "9:16"]
+  }
+}
+```
+
+---
+
+### 14.5 Full Autonomous Creative Loop
+
+**Scenario:** You want to run the entire creative pipeline — from signal to live DCO campaign — in one conversation.
+
+**Full conversation with Claude:**
+
+```
+1. "Pull last 30 days of account data and generate a creative brief."
+   → meta_account_intelligence → meta_generate_creative_brief
+
+2. "Generate 3 ad copy variants from the brief, stat hook, 3 DCO variants."
+   → meta_generate_ad_copy (variants: 3, hook_style: stat)
+
+3. "Generate 2 image variations for the brief — 4:5 format, warm tones."
+   → imagen_generate_ad (image-gen-mcp, aspect_ratio: "4:5", count: 2)
+
+4. "Add our product screenshot to the first image."
+   → imagen_composite_asset (image-gen-mcp)
+
+5. "Upload both images and launch a DCO campaign with the copy variants."
+   → meta_upload_image × 2
+   → meta_deploy_dco_campaign (image_hashes, dco_ready.headlines, dco_ready.bodies)
+
+--- 7 days later ---
+
+6. "Analyse performance on campaign [ID] and give me the next brief."
+   → meta_analyze_creative_performance
+   → synthesis.next_brief → back to step 2
+```
+
+**What this loop produces over time:**
+- Week 1: Baseline — test 3 angles from account data
+- Week 2: Scale the winner, pause losers, test winner variant
+- Week 3: Iterate on the variant, introduce new hook from competitor brief
+- Result: A self-improving creative system driven by real performance data
 
 ---
 
