@@ -18,6 +18,7 @@ Practical examples of what you can accomplish with the Meta MCP Server. Each sce
 10. [Competitive Intelligence](#10-competitive-intelligence)
 11. [Zero-Conversion Diagnostics & Creative Iteration](#11-zero-conversion-diagnostics--creative-iteration)
 12. [Value Rules — Advanced Bid Adjustment](#12-value-rules--advanced-bid-adjustment)
+13. [High Demand Periods — Scheduled Budget Boosts](#13-high-demand-periods--scheduled-budget-boosts)
 
 ---
 
@@ -1572,7 +1573,106 @@ Rule 2: age i_contains [18-24]        → multiplier: 0.75, priority: 2
 
 ---
 
+## 13. High Demand Periods — Scheduled Budget Boosts
 
+> **Optional feature.** High Demand Period budget schedules are not used by default. Claude will only call these tools when you explicitly ask. Requires **Campaign Budget Optimization (CBO)** to be enabled on the campaign.
+
+**Background:** High Demand Periods let you pre-schedule an automatic budget boost for a specific time window. Instead of waking up at midnight to manually increase your Black Friday budget, you set it once and Meta handles the rest — activating the boost on schedule and reverting to the normal budget when the period ends. Up to 50 schedules per campaign, no overlaps, minimum 3 hours per period.
+
+**Two budget modes:**
+- **MULTIPLIER** — scale your existing daily budget by a factor (e.g. `2.0` = double it). Simpler because you don't need to know the exact amount.
+- **ABSOLUTE** — set an explicit spend cap in account currency cents (e.g. `15000` = $150). More precise, but cannot exceed 8× the daily budget.
+
+---
+
+### 13.1 Black Friday / Cyber Monday Budget Boost
+
+**Scenario:** Your campaign runs at $100/day normally. For BFCM weekend you want to triple the budget from Friday midnight through Monday midnight, then return to normal automatically.
+
+**Prompts:**
+- *"List the budget schedules on campaign [ID]."*
+- *"Create a budget schedule on campaign [ID]: multiply the budget by 3× from Friday November 28 00:00 UTC to Monday December 1 00:00 UTC."*
+
+**Tools used:** `meta_list_budget_schedules` → `meta_create_budget_schedule`
+
+**What Claude does:** Converts the human dates to Unix timestamps, validates the 72-hour window exceeds the 3-hour minimum, and creates the schedule. The campaign continues at $100/day until Friday, then automatically runs at $300/day for the weekend.
+
+---
+
+### 13.2 Flash Sale — 24-Hour Absolute Budget Cap
+
+**Scenario:** You're running a 24-hour flash sale on Saturday and want to push exactly $500 in spend that day regardless of the normal daily budget.
+
+**Prompts:**
+- *"Schedule an absolute $500 budget for campaign [ID] on Saturday from 00:00 to 23:59 UTC."*
+
+**Tools used:** `meta_create_budget_schedule`
+
+**Note:** ABSOLUTE budgets are in account currency cents. $500 = `50000`. Must be ≤ 8× the campaign's daily budget.
+
+---
+
+### 13.3 Product Launch Day
+
+**Scenario:** New product drops at 9am on March 15. You want a 2× budget boost from 6am (pre-launch awareness) through midnight to capture launch-day demand.
+
+**Prompts:**
+- *"Create a budget schedule for campaign [ID]: 2× multiplier on March 15 from 06:00 to 23:59 in my timezone (EST)."*
+
+**Tools used:** `meta_create_budget_schedule`
+
+**Tip:** Tell Claude your timezone when specifying times — it will convert to UTC Unix timestamps automatically.
+
+---
+
+### 13.4 Weekend Boost for Seasonal Campaigns
+
+**Scenario:** Your data shows Saturday–Sunday outperform weekdays by 40%. You want a recurring pattern of weekend boosts across a 4-week campaign.
+
+**Prompts:**
+- *"List the budget schedules for campaign [ID] — I want to see what's already set up."*
+- *"Create four weekend budget schedules on campaign [ID]: 1.5× multiplier for each Saturday 00:00 to Sunday 23:59 over the next 4 weekends."*
+
+**Tools used:** `meta_list_budget_schedules` → `meta_create_budget_schedule` (×4)
+
+**What Claude does:** Calculates the Unix timestamps for each of the four weekends and creates four separate non-overlapping schedules in sequence.
+
+---
+
+### 13.5 Cancel a Scheduled Boost
+
+**Scenario:** You created a Black Friday schedule but the sale has been cancelled. You need to remove the boost before it activates.
+
+**Prompts:**
+- *"List the budget schedules for campaign [ID]."*
+- *"Delete the Black Friday schedule."*
+
+**Tools used:** `meta_list_budget_schedules` → `meta_delete_budget_schedule`
+
+**What Claude does:** Lists schedules so you can identify the right ID, then deletes it. If the period is already active, the budget reverts to normal immediately.
+
+---
+
+### High Demand Period Quick Reference
+
+| Scenario | budget_value_type | Example value | Notes |
+|---|---|---|---|
+| Double budget for an event | `MULTIPLIER` | `2.0` | 2× current daily budget |
+| +50% weekend boost | `MULTIPLIER` | `1.5` | 50% increase |
+| 3× for BFCM | `MULTIPLIER` | `3.0` | Triple spend for the weekend |
+| Fixed $200 spend cap | `ABSOLUTE` | `20000` | Value in cents; max 8× daily |
+| Fixed $500 for flash sale | `ABSOLUTE` | `50000` | Value in cents |
+| Slight increase (+20%) | `MULTIPLIER` | `1.2` | Conservative boost |
+
+**Constraints reminder:**
+- CBO campaigns only
+- Min 3 hours per period
+- ABSOLUTE max = 8× daily budget
+- Max 50 schedules per campaign, no overlaps
+
+---
+
+## Tips for Working with Claude on Ad Tasks
 
 **Be specific about numbers.** Instead of "increase the budget", say "increase the daily budget to $75/day". Claude will confirm before writing any changes.
 

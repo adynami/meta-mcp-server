@@ -24,6 +24,7 @@ Ask Claude to manage your Facebook, Instagram, and Threads ad campaigns using pl
 - **Debug** — diagnose why an ad isn't delivering
 - **Attribution** — configure attribution windows per-breakdown or per-report (1d/7d/28d click + 1d/7d view)
 - **Value Rules** *(optional, advanced)* — tell Meta's auction how much a conversion from a specific segment (iOS, country, placement, age, gender) is worth to your business; adjusts bids in real time without separate campaigns
+- **High Demand Periods** *(optional, advanced)* — pre-schedule automatic budget boosts for specific time windows (Black Friday, flash sales, product launches) on CBO campaigns; boost activates and expires on schedule with no manual intervention
 
 All write operations support **DRY_RUN mode** — simulate any action without touching live data.
 
@@ -122,7 +123,7 @@ Ask Claude:
 
 ---
 
-## Tools Overview (69 tools)
+## Tools Overview (72 tools)
 
 ### Account & Campaign Management
 
@@ -269,6 +270,16 @@ Ask Claude:
 | `meta_create_value_rule` | Create a rule that adjusts Meta's auction bid for a specific segment (OS, country, placement, age, gender) |
 | `meta_update_value_rule` | Update multiplier, conditions, priority, or status |
 | `meta_delete_value_rule` | Permanently delete a Value Rule |
+
+### High Demand Periods *(optional, advanced)*
+
+> Not applied by default. Claude only uses these tools when you explicitly ask.
+
+| Tool | Description |
+|---|---|
+| `meta_list_budget_schedules` | List scheduled budget boosts for a CBO campaign |
+| `meta_create_budget_schedule` | Schedule an automatic budget boost for a time window (e.g. Black Friday) |
+| `meta_delete_budget_schedule` | Cancel a scheduled budget boost |
 
 ---
 
