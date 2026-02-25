@@ -11,6 +11,7 @@ import {
   getAdDetails as apiGetAdDetails, getAdSetDetails as apiGetAdSetDetails,
   listPages, batchUpdateStatus,
 } from '../meta-client.js';
+import { graphGet } from '../utils/graph.js';
 import { buildTargetingSpec } from '../utils/targeting.js';
 import { resolveRange, type TimeRangeKey } from '../utils/date-ranges.js';
 import { computeMetrics, type RawInsightRow } from '../utils/metrics.js';
@@ -948,25 +949,6 @@ async function addAd(args: any): Promise<any> {
 
     return { success: false, error: errorDetail };
   }
-}
-
-// ── Local Graph API helper for endpoints not in the SDK ──
-
-async function graphGet(objectPath: string, params: Record<string, any> = {}): Promise<any> {
-  const qp = new URLSearchParams({ access_token: config.accessToken });
-  for (const [k, v] of Object.entries(params)) {
-    qp.append(k, typeof v === 'object' ? JSON.stringify(v) : String(v));
-  }
-  const url = `https://graph.facebook.com/${config.apiVersion}/${objectPath}?${qp.toString()}`;
-  const response = await fetch(url);
-  const data = await response.json() as any;
-  if (!response.ok || data.error) {
-    const e = data.error ?? {};
-    const err = new Error(e.message ?? `HTTP ${response.status}`) as any;
-    err.response = { error: e };
-    throw err;
-  }
-  return data;
 }
 
 async function handleGetAdPreview(args: any): Promise<any> {

@@ -1,46 +1,6 @@
 import { config } from '../config.js';
 import { rateLimitedCall } from '../utils/rate-limiter.js';
-
-// ── Local Graph API helpers ──
-
-async function graphGet(objectPath: string, params: Record<string, any> = {}): Promise<any> {
-  const qp = new URLSearchParams({ access_token: config.accessToken });
-  for (const [k, v] of Object.entries(params)) {
-    qp.append(k, typeof v === 'object' ? JSON.stringify(v) : String(v));
-  }
-  const url = `https://graph.facebook.com/${config.apiVersion}/${objectPath}?${qp.toString()}`;
-  const response = await fetch(url);
-  const data = await response.json() as any;
-  if (!response.ok || data.error) {
-    const e = data.error ?? {};
-    const err = new Error(e.message ?? `HTTP ${response.status}`) as any;
-    err.response = { error: e };
-    throw err;
-  }
-  return data;
-}
-
-async function graphPost(objectPath: string, params: Record<string, any>): Promise<any> {
-  const url = `https://graph.facebook.com/${config.apiVersion}/${objectPath}`;
-  const formBody = new URLSearchParams();
-  formBody.append('access_token', config.accessToken);
-  for (const [k, v] of Object.entries(params)) {
-    formBody.append(k, typeof v === 'object' ? JSON.stringify(v) : String(v));
-  }
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: formBody.toString(),
-  });
-  const data = await response.json() as any;
-  if (!response.ok || data.error) {
-    const e = data.error ?? {};
-    const err = new Error(e.message ?? `HTTP ${response.status}`) as any;
-    err.response = { error: e };
-    throw err;
-  }
-  return data;
-}
+import { graphGet, graphPost } from '../utils/graph.js';
 
 // ── Tool definitions ──
 

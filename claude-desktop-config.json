@@ -6,9 +6,9 @@
       "env": {
         "META_ACCESS_TOKEN": "YOUR_LONG_LIVED_ACCESS_TOKEN",
         "META_AD_ACCOUNT_ID": "act_YOUR_ACCOUNT_ID",
-        "META_APP_ID": "REDACTED_APP_ID",
-        "META_APP_SECRET": "REDACTED_APP_SECRET",
-        "META_API_VERSION": "v19.0",
+        "META_APP_ID": "YOUR_APP_ID",
+        "META_APP_SECRET": "YOUR_APP_SECRET",
+        "META_API_VERSION": "v25.0",
         "DRY_RUN": "false"
       }
     }

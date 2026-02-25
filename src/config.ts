@@ -1,8 +1,8 @@
 export const config = {
   accessToken: process.env.META_ACCESS_TOKEN ?? '',
   adAccountId: process.env.META_AD_ACCOUNT_ID ?? '',
-  appId: process.env.META_APP_ID ?? 'REDACTED_APP_ID',
-  appSecret: process.env.META_APP_SECRET ?? 'REDACTED_APP_SECRET',
+  appId: process.env.META_APP_ID ?? '',
+  appSecret: process.env.META_APP_SECRET ?? '',
   apiVersion: process.env.META_API_VERSION ?? 'v25.0',
   dryRun: process.env.DRY_RUN === 'true',
   geminiApiKey: process.env.GEMINI_API_KEY ?? '',

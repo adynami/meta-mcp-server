@@ -12,8 +12,16 @@ import * as https from 'node:https';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-const APP_ID = 'REDACTED_APP_ID';
-const APP_SECRET = 'REDACTED_APP_SECRET';
+const APP_ID = process.env.META_APP_ID;
+const APP_SECRET = process.env.META_APP_SECRET;
+
+if (!APP_ID || !APP_SECRET) {
+  console.error('META_APP_ID and META_APP_SECRET environment variables are required.');
+  console.error('Set them before running this script:');
+  console.error('  export META_APP_ID=your_app_id');
+  console.error('  export META_APP_SECRET=your_app_secret');
+  process.exit(1);
+}
 
 const CLAUDE_CONFIG_PATH = path.join(
   process.env.HOME ?? '~',

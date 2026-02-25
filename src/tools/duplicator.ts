@@ -1,5 +1,6 @@
 import { config } from '../config.js';
 import { rateLimitedCall } from '../utils/rate-limiter.js';
+import { graphGet, graphPost } from '../utils/graph.js';
 
 // ── Tool definitions ──
 
@@ -85,45 +86,6 @@ export async function handleDuplicatorTool(name: string, args: any): Promise<any
 }
 
 // ── Helpers ──
-
-async function graphPost(objectPath: string, params: Record<string, any>): Promise<any> {
-  const url = `https://graph.facebook.com/${config.apiVersion}/${objectPath}`;
-  const formBody = new URLSearchParams();
-  formBody.append('access_token', config.accessToken);
-  for (const [key, value] of Object.entries(params)) {
-    formBody.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
-  }
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: formBody.toString(),
-  });
-  const data = await response.json() as any;
-  if (!response.ok || data.error) {
-    const e = data.error ?? {};
-    const err = new Error(e.message ?? `HTTP ${response.status}`) as any;
-    err.response = { error: e };
-    throw err;
-  }
-  return data;
-}
-
-async function graphGet(objectPath: string, params: Record<string, any> = {}): Promise<any> {
-  const url = new URL(`https://graph.facebook.com/${config.apiVersion}/${objectPath}`);
-  url.searchParams.append('access_token', config.accessToken);
-  for (const [key, value] of Object.entries(params)) {
-    url.searchParams.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
-  }
-  const response = await fetch(url.toString());
-  const data = await response.json() as any;
-  if (!response.ok || data.error) {
-    const e = data.error ?? {};
-    const err = new Error(e.message ?? `HTTP ${response.status}`) as any;
-    err.response = { error: e };
-    throw err;
-  }
-  return data;
-}
 
 /** Fetch all ad sets for a campaign, auto-paginating. */
 async function fetchAllAdSets(campaignId: string): Promise<any[]> {

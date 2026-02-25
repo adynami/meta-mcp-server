@@ -339,7 +339,7 @@ const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
 const MAX_FILE_SIZE = 30 * 1024 * 1024;
 
 async function handleUpload(args: any): Promise<any> {
-  const filePath = args.local_file_path;
+  const filePath = path.resolve(args.local_file_path);
 
   if (!fs.existsSync(filePath)) {
     throw new Error(`File not found: ${filePath}. Provide an absolute path to an existing image file.`);
@@ -382,7 +382,7 @@ const ALLOWED_VIDEO_EXTENSIONS = ['.mp4', '.mov', '.avi', '.mkv', '.m4v', '.wmv'
 const MAX_VIDEO_SIZE = 4 * 1024 * 1024 * 1024; // 4 GB
 
 async function handleVideoUpload(args: any): Promise<any> {
-  const filePath = args.local_file_path;
+  const filePath = path.resolve(args.local_file_path);
 
   if (!fs.existsSync(filePath)) {
     throw new Error(`File not found: ${filePath}. Provide an absolute path to an existing video file.`);

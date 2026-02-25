@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import bizSdk from 'facebook-nodejs-business-sdk';
 import { config } from './config.js';
 import { rateLimitedCall } from './utils/rate-limiter.js';
+import { validateMetaId } from './utils/graph.js';
 import type { AccountContext } from './utils/schemas.js';
 
 const { FacebookAdsApi, AdAccount, Campaign, AdSet, Ad } = bizSdk;
@@ -354,6 +355,7 @@ export async function uploadAdVideo(filePath: string): Promise<{ video_id: strin
 // ── Generic Object Update ──
 
 async function postUpdate(id: string, params: Record<string, any>): Promise<any> {
+  validateMetaId(id);
   const url = `https://graph.facebook.com/${config.apiVersion}/${id}`;
   const formBody = new URLSearchParams();
   formBody.append('access_token', config.accessToken);
@@ -414,6 +416,7 @@ export async function createCustomAudience(params: Record<string, any>): Promise
 }
 
 export async function addUsersToAudience(audienceId: string, payload: any): Promise<any> {
+  validateMetaId(audienceId);
   return rateLimitedCall(async () => {
     const url = `https://graph.facebook.com/${config.apiVersion}/${audienceId}/users`;
     const formBody = new URLSearchParams();
@@ -456,6 +459,7 @@ export async function fetchAudiences(params: Record<string, any>): Promise<any[]
 }
 
 export async function deleteAudience(id: string): Promise<void> {
+  validateMetaId(id);
   return rateLimitedCall(async () => {
     const url = `https://graph.facebook.com/${config.apiVersion}/${id}`;
     const formBody = new URLSearchParams({ access_token: config.accessToken });
@@ -493,6 +497,7 @@ export async function listPixels(limit: number): Promise<any[]> {
 }
 
 export async function getPixelStats(pixelId: string, params: Record<string, any>): Promise<any> {
+  validateMetaId(pixelId);
   return rateLimitedCall(async () => {
     const qp = new URLSearchParams({ access_token: config.accessToken, ...params });
     const url = `https://graph.facebook.com/${config.apiVersion}/${pixelId}/stats?${qp.toString()}`;
@@ -599,6 +604,7 @@ export async function estimateAudienceSize(
 }
 
 export async function getCreativeDetails(creativeId: string): Promise<any> {
+  validateMetaId(creativeId);
   return rateLimitedCall(async () => {
     const qp = new URLSearchParams({
       access_token: config.accessToken,
@@ -616,6 +622,10 @@ export async function getCreativeDetails(creativeId: string): Promise<any> {
 }
 
 export async function downloadImageAsBase64(url: string): Promise<{ data: string; mimeType: string }> {
+  const parsed = new URL(url);
+  if (!parsed.hostname.endsWith('.fbcdn.net')) {
+    throw new Error('Image URL must be from Meta CDN (*.fbcdn.net)');
+  }
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Failed to download image: HTTP ${response.status}`);
   const buffer = Buffer.from(await response.arrayBuffer());
@@ -810,6 +820,7 @@ export async function listPages(limit: number): Promise<any[]> {
 }
 
 export async function getAdDetails(adId: string): Promise<any> {
+  validateMetaId(adId);
   return rateLimitedCall(async () => {
     const qp = new URLSearchParams({
       access_token: config.accessToken,
@@ -829,6 +840,7 @@ export async function getAdDetails(adId: string): Promise<any> {
 }
 
 export async function getAdSetDetails(adSetId: string): Promise<any> {
+  validateMetaId(adSetId);
   return rateLimitedCall(async () => {
     const qp = new URLSearchParams({
       access_token: config.accessToken,
@@ -848,6 +860,7 @@ export async function getAdSetDetails(adSetId: string): Promise<any> {
 }
 
 export async function batchUpdateStatus(ids: string[], status: string): Promise<any[]> {
+  ids.forEach(validateMetaId);
   return rateLimitedCall(async () => {
     const batch = ids.map(id => ({
       method: 'POST',

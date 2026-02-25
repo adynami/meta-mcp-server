@@ -16,7 +16,7 @@ if (!token) {
 console.log('Token (first 20 chars):', token.slice(0, 20) + '...');
 console.log('');
 
-const url = `https://graph.facebook.com/v22.0/me/permissions?access_token=${token}`;
+const url = `https://graph.facebook.com/v25.0/me/permissions?access_token=${token}`;
 console.log('GET', url.replace(token, '<token>'));
 console.log('');
 
