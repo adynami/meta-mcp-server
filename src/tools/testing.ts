@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import type { TenantContext } from '../tenant-context.js';
 import { rateLimitedCall } from '../utils/rate-limiter.js';
 import { graphGet, graphPost } from '../utils/graph.js';
 
@@ -61,17 +61,17 @@ This is a write operation — confirm all details before calling.`,
   },
 ];
 
-export async function handleTestingTool(name: string, args: any): Promise<any> {
+export async function handleTestingTool(ctx: TenantContext, name: string, args: any): Promise<any> {
   switch (name) {
-    case 'meta_list_ab_tests': return listAbTests(args);
-    case 'meta_create_ab_test': return createAbTest(args);
+    case 'meta_list_ab_tests': return listAbTests(ctx, args);
+    case 'meta_create_ab_test': return createAbTest(ctx, args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
 }
 
-async function listAbTests(args: any): Promise<any> {
+async function listAbTests(ctx: TenantContext, args: any): Promise<any> {
   const result = await rateLimitedCall(() =>
-    graphGet(`${config.adAccountId}/ad_studies`, {
+    graphGet(ctx, `${ctx.adAccountId}/ad_studies`, {
       fields: 'id,name,type,status,start_time,end_time,description',
       limit: args.limit ?? 10,
     }),
@@ -91,8 +91,8 @@ async function listAbTests(args: any): Promise<any> {
   };
 }
 
-async function createAbTest(args: any): Promise<any> {
-  if (config.dryRun) {
+async function createAbTest(ctx: TenantContext, args: any): Promise<any> {
+  if (ctx.dryRun) {
     return {
       dry_run: true,
       message: `Simulated: A/B test "${args.name}" — campaign ${args.campaign_a_id} vs ${args.campaign_b_id} on ${args.variable}`,
@@ -122,7 +122,7 @@ async function createAbTest(args: any): Promise<any> {
   }
 
   const result = await rateLimitedCall(() =>
-    graphPost(`${config.adAccountId}/ad_studies`, params),
+    graphPost(ctx, `${ctx.adAccountId}/ad_studies`, params),
   );
 
   return {

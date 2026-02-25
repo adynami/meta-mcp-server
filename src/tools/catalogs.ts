@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import type { TenantContext } from '../tenant-context.js';
 import { rateLimitedCall } from '../utils/rate-limiter.js';
 import { graphGet } from '../utils/graph.js';
 
@@ -56,19 +56,19 @@ export const catalogTools = [
   },
 ];
 
-export async function handleCatalogTool(name: string, args: any): Promise<any> {
+export async function handleCatalogTool(ctx: TenantContext, name: string, args: any): Promise<any> {
   switch (name) {
-    case 'meta_list_product_catalogs': return listProductCatalogs(args);
-    case 'meta_get_catalog': return getCatalog(args);
-    case 'meta_list_catalog_products': return listCatalogProducts(args);
-    case 'meta_list_product_sets': return listProductSets(args);
+    case 'meta_list_product_catalogs': return listProductCatalogs(ctx, args);
+    case 'meta_get_catalog': return getCatalog(ctx, args);
+    case 'meta_list_catalog_products': return listCatalogProducts(ctx, args);
+    case 'meta_list_product_sets': return listProductSets(ctx, args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
 }
 
-async function listProductCatalogs(args: any): Promise<any> {
+async function listProductCatalogs(ctx: TenantContext, args: any): Promise<any> {
   const result = await rateLimitedCall(() =>
-    graphGet(`${config.adAccountId}/product_catalogs`, {
+    graphGet(ctx, `${ctx.adAccountId}/product_catalogs`, {
       fields: 'id,name,product_count,vertical,feed_count',
       limit: args.limit ?? 10,
     }),
@@ -86,9 +86,9 @@ async function listProductCatalogs(args: any): Promise<any> {
   };
 }
 
-async function getCatalog(args: any): Promise<any> {
+async function getCatalog(ctx: TenantContext, args: any): Promise<any> {
   const c = await rateLimitedCall(() =>
-    graphGet(args.catalog_id, {
+    graphGet(ctx, args.catalog_id, {
       fields: 'id,name,product_count,vertical,feed_count,owner_business',
     }),
   );
@@ -102,7 +102,7 @@ async function getCatalog(args: any): Promise<any> {
   };
 }
 
-async function listCatalogProducts(args: any): Promise<any> {
+async function listCatalogProducts(ctx: TenantContext, args: any): Promise<any> {
   const params: Record<string, any> = {
     fields: 'id,retailer_id,name,price,sale_price,currency,availability,image_url,url,brand,category,errors',
     limit: args.limit ?? 25,
@@ -111,7 +111,7 @@ async function listCatalogProducts(args: any): Promise<any> {
   if (args.filter === 'with_errors') params.filter = JSON.stringify({ has_errors: { eq: true } });
 
   const result = await rateLimitedCall(() =>
-    graphGet(`${args.catalog_id}/products`, params),
+    graphGet(ctx, `${args.catalog_id}/products`, params),
   );
 
   const products = (result.data ?? []).map((p: any) => ({
@@ -138,9 +138,9 @@ async function listCatalogProducts(args: any): Promise<any> {
   };
 }
 
-async function listProductSets(args: any): Promise<any> {
+async function listProductSets(ctx: TenantContext, args: any): Promise<any> {
   const result = await rateLimitedCall(() =>
-    graphGet(`${args.catalog_id}/product_sets`, {
+    graphGet(ctx, `${args.catalog_id}/product_sets`, {
       fields: 'id,name,filter,product_count',
       limit: args.limit ?? 25,
     }),

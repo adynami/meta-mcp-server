@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import type { TenantContext } from '../tenant-context.js';
 import {
   fetchAccountInsights, fetchInsightsBreakdown, fetchBreakdownInsights, getAccountContext,
   startAsyncInsights, pollInsightsReport, fetchInsightsReport,
@@ -57,11 +57,11 @@ export const analystTools = [
 
 Best for:
 - Date ranges > 30 days
-- High-granularity breakdowns (placement × device × country)
+- High-granularity breakdowns (placement x device x country)
 - Exporting large campaigns with 100+ ad sets or ads
 - Time series over long periods (daily data for last 90 days)
 
-If the user hasn't specified what breakdown or date range they want, ask them before running — this job can take 1–3 minutes.`,
+If the user hasn't specified what breakdown or date range they want, ask them before running — this job can take 1-3 minutes.`,
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -122,14 +122,14 @@ Use response_format="concise" if you only need the summary text. Use "detailed" 
   },
 ];
 
-export async function handleAnalystTool(name: string, args: any): Promise<any> {
-  if (name === 'meta_account_intelligence') return getAccountIntelligence(args);
-  if (name === 'meta_get_breakdown_insights') return getBreakdownInsights(args);
-  if (name === 'meta_request_insights_report') return requestAsyncInsightsReport(args);
+export async function handleAnalystTool(ctx: TenantContext, name: string, args: any): Promise<any> {
+  if (name === 'meta_account_intelligence') return getAccountIntelligence(ctx, args);
+  if (name === 'meta_get_breakdown_insights') return getBreakdownInsights(ctx, args);
+  if (name === 'meta_request_insights_report') return requestAsyncInsightsReport(ctx, args);
   throw new Error(`Unknown tool: ${name}`);
 }
 
-// Breakdown dimension → Meta API breakdowns param
+// Breakdown dimension -> Meta API breakdowns param
 const BREAKDOWN_MAP: Record<string, string[]> = {
   age:        ['age'],
   gender:     ['gender'],
@@ -157,14 +157,14 @@ const TIME_INCREMENT_MAP: Record<string, number | string> = {
   monthly: 'monthly',
 };
 
-async function getBreakdownInsights(args: any): Promise<any> {
+async function getBreakdownInsights(ctx: TenantContext, args: any): Promise<any> {
   const rangeKey = (args.time_range ?? 'last_7d') as TimeRangeKey;
   const range = resolveRange(rangeKey);
 
   const breakdowns = args.breakdown ? BREAKDOWN_MAP[args.breakdown] : undefined;
   const time_increment = args.time_series ? TIME_INCREMENT_MAP[args.time_series] : undefined;
 
-  const result = await fetchBreakdownInsights({
+  const result = await fetchBreakdownInsights(ctx, {
     campaign_id: args.campaign_id,
     time_range: range,
     breakdowns,
@@ -224,16 +224,16 @@ async function getBreakdownInsights(args: any): Promise<any> {
   };
 }
 
-async function getAccountIntelligence(args: any): Promise<any> {
+async function getAccountIntelligence(ctx: TenantContext, args: any): Promise<any> {
   const rangeKey = (args.time_range ?? 'last_7d') as TimeRangeKey;
   const currentRange = resolveRange(rangeKey);
   const previousRange = resolvePreviousPeriod(rangeKey);
-  const account = await getAccountContext();
+  const account = await getAccountContext(ctx);
 
   const [currentRaw, previousRaw, campaignBreakdown] = await Promise.all([
-    fetchAccountInsights({ time_range: currentRange }),
-    fetchAccountInsights({ time_range: previousRange }),
-    fetchInsightsBreakdown({
+    fetchAccountInsights(ctx, { time_range: currentRange }),
+    fetchAccountInsights(ctx, { time_range: previousRange }),
+    fetchInsightsBreakdown(ctx, {
       time_range: currentRange,
       level: 'campaign',
       limit: 50,
@@ -262,7 +262,7 @@ async function getAccountIntelligence(args: any): Promise<any> {
   const ccy = account.currency;
   const summary = buildSummaryText(current, previous, topByRoas, bleeders, ccy, currentRange, previousRange);
 
-  // Concise mode: just the summary text — minimal tokens
+  // Concise mode: just the summary text -- minimal tokens
   if (args.response_format !== 'detailed') {
     return { summary };
   }
@@ -339,7 +339,7 @@ function resolveAsyncRange(key: string): { since: string; until: string } {
   return resolveRange(key as TimeRangeKey);
 }
 
-async function requestAsyncInsightsReport(args: any): Promise<any> {
+async function requestAsyncInsightsReport(ctx: TenantContext, args: any): Promise<any> {
   const rangeKey = args.time_range ?? 'last_30d';
   // Use resolveRange for standard keys, resolveAsyncRange for extended keys
   const extendedKeys = ['last_60d', 'last_90d', 'this_quarter', 'last_year'];
@@ -351,7 +351,7 @@ async function requestAsyncInsightsReport(args: any): Promise<any> {
   const time_increment = args.time_series ? TIME_INCREMENT_MAP[args.time_series] : undefined;
 
   // Start the async job
-  const reportRunId = await startAsyncInsights({
+  const reportRunId = await startAsyncInsights(ctx, {
     campaign_id: args.campaign_id,
     time_range: range,
     breakdowns,
@@ -361,13 +361,13 @@ async function requestAsyncInsightsReport(args: any): Promise<any> {
   });
 
   // Poll until complete
-  await pollInsightsReport(reportRunId);
+  await pollInsightsReport(ctx, reportRunId);
 
   // Collect all pages
   const allRows: any[] = [];
   let cursor: string | undefined;
   do {
-    const page = await fetchInsightsReport(reportRunId, cursor);
+    const page = await fetchInsightsReport(ctx, reportRunId, cursor);
     allRows.push(...page.data);
     cursor = page.paging?.cursors?.after && page.paging?.next ? page.paging.cursors.after : undefined;
   } while (cursor);

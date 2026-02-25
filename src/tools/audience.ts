@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { config } from '../config.js';
+import type { TenantContext } from '../tenant-context.js';
 import {
   createCustomAudience,
   addUsersToAudience,
@@ -212,21 +212,21 @@ This is a write operation — confirm before calling.`,
   },
 ];
 
-export async function handleAudienceTool(name: string, args: any): Promise<any> {
+export async function handleAudienceTool(ctx: TenantContext, name: string, args: any): Promise<any> {
   switch (name) {
-    case 'meta_list_audiences': return listAudiences(args);
-    case 'meta_create_customer_audience': return createFromCustomerList(args);
-    case 'meta_create_lookalike_audience': return createLookalike(args);
-    case 'meta_create_website_audience': return createWebsiteAudience(args);
-    case 'meta_create_engagement_audience': return createEngagementAudience(args);
-    case 'meta_create_video_audience': return createVideoAudience(args);
-    case 'meta_delete_audience': return removeAudience(args);
+    case 'meta_list_audiences': return listAudiences(ctx, args);
+    case 'meta_create_customer_audience': return createFromCustomerList(ctx, args);
+    case 'meta_create_lookalike_audience': return createLookalike(ctx, args);
+    case 'meta_create_website_audience': return createWebsiteAudience(ctx, args);
+    case 'meta_create_engagement_audience': return createEngagementAudience(ctx, args);
+    case 'meta_create_video_audience': return createVideoAudience(ctx, args);
+    case 'meta_delete_audience': return removeAudience(ctx, args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
 }
 
-async function listAudiences(args: any): Promise<any> {
-  const rows = await fetchAudiences({ limit: args.limit ?? 25, after: args.after });
+async function listAudiences(ctx: TenantContext, args: any): Promise<any> {
+  const rows = await fetchAudiences(ctx, { limit: args.limit ?? 25, after: args.after });
   const concise = args.response_format === 'concise';
   return {
     audiences: rows.map((a: any) => concise
@@ -259,7 +259,7 @@ function normalizePhone(phone: string): string {
   return phone.replace(/\D/g, '');
 }
 
-async function createFromCustomerList(args: any): Promise<any> {
+async function createFromCustomerList(ctx: TenantContext, args: any): Promise<any> {
   const emails: string[] = args.emails ?? [];
   const phones: string[] = args.phones ?? [];
 
@@ -267,7 +267,7 @@ async function createFromCustomerList(args: any): Promise<any> {
     return { success: false, error: 'Provide at least one email or phone number.' };
   }
 
-  if (config.dryRun) {
+  if (ctx.dryRun) {
     return {
       dry_run: true,
       message: `Simulated: create customer list audience "${args.name}" with ${emails.length} emails and ${phones.length} phones`,
@@ -275,7 +275,7 @@ async function createFromCustomerList(args: any): Promise<any> {
   }
 
   // Create the audience shell
-  const audience = await createCustomAudience({
+  const audience = await createCustomAudience(ctx, {
     name: args.name,
     subtype: 'CUSTOM',
     customer_file_source: 'USER_PROVIDED_ONLY',
@@ -288,13 +288,13 @@ async function createFromCustomerList(args: any): Promise<any> {
 
   if (emails.length > 0 && phones.length === 0) {
     // Emails only
-    result = await addUsersToAudience(audienceId, {
+    result = await addUsersToAudience(ctx, audienceId, {
       schema: 'EMAIL_SHA256',
       data: emails.map(e => sha256(normalizeEmail(e))),
     });
   } else if (phones.length > 0 && emails.length === 0) {
     // Phones only
-    result = await addUsersToAudience(audienceId, {
+    result = await addUsersToAudience(ctx, audienceId, {
       schema: 'PHONE_SHA256',
       data: phones.map(p => sha256(normalizePhone(p))),
     });
@@ -307,7 +307,7 @@ async function createFromCustomerList(args: any): Promise<any> {
       const p = phones[i] ? sha256(normalizePhone(phones[i])) : '';
       data.push([e, p]);
     }
-    result = await addUsersToAudience(audienceId, {
+    result = await addUsersToAudience(ctx, audienceId, {
       schema: ['EMAIL_SHA256', 'PHONE_SHA256'],
       data,
     });
@@ -324,18 +324,18 @@ async function createFromCustomerList(args: any): Promise<any> {
   };
 }
 
-async function createLookalike(args: any): Promise<any> {
+async function createLookalike(ctx: TenantContext, args: any): Promise<any> {
   const ratio = args.ratio ?? 0.01;
   const type = args.type ?? 'similarity';
 
-  if (config.dryRun) {
+  if (ctx.dryRun) {
     return {
       dry_run: true,
       message: `Simulated: create lookalike audience "${args.name}" from seed ${args.source_audience_id} — ${(ratio * 100).toFixed(0)}% of ${args.country}`,
     };
   }
 
-  const result = await createCustomAudience({
+  const result = await createCustomAudience(ctx, {
     name: args.name,
     subtype: 'LOOKALIKE',
     origin_audience_id: args.source_audience_id,
@@ -402,8 +402,8 @@ function buildAudienceRule(pixelId: string, retentionSeconds: number, includeRul
   return rule;
 }
 
-async function createWebsiteAudience(args: any): Promise<any> {
-  if (config.dryRun) {
+async function createWebsiteAudience(ctx: TenantContext, args: any): Promise<any> {
+  if (ctx.dryRun) {
     return {
       dry_run: true,
       message: `Simulated: create website audience "${args.name}" from pixel ${args.pixel_id}`,
@@ -417,7 +417,7 @@ async function createWebsiteAudience(args: any): Promise<any> {
 
   const rule = buildAudienceRule(args.pixel_id, retentionSeconds, includeRules, excludeRules);
 
-  const result = await createCustomAudience({
+  const result = await createCustomAudience(ctx, {
     name: args.name,
     subtype: 'WEBSITE',
     retention_days: retentionDays,
@@ -436,12 +436,12 @@ async function createWebsiteAudience(args: any): Promise<any> {
   };
 }
 
-async function createEngagementAudience(args: any): Promise<any> {
+async function createEngagementAudience(ctx: TenantContext, args: any): Promise<any> {
   const retentionDays = args.retention_days ?? 30;
   const retentionSeconds = retentionDays * 86400;
   const sourceType = args.source_type ?? 'page';
 
-  if (config.dryRun) {
+  if (ctx.dryRun) {
     return {
       dry_run: true,
       message: `Simulated: create engagement audience "${args.name}" from ${sourceType} ${args.source_id} — ${args.engagement_type}, ${retentionDays}d`,
@@ -462,7 +462,7 @@ async function createEngagementAudience(args: any): Promise<any> {
     },
   };
 
-  const result = await createCustomAudience({
+  const result = await createCustomAudience(ctx, {
     name: args.name,
     subtype: 'ENGAGEMENT',
     ...(args.description && { description: args.description }),
@@ -481,8 +481,8 @@ async function createEngagementAudience(args: any): Promise<any> {
   };
 }
 
-async function createVideoAudience(args: any): Promise<any> {
-  if (config.dryRun) {
+async function createVideoAudience(ctx: TenantContext, args: any): Promise<any> {
+  if (ctx.dryRun) {
     return {
       dry_run: true,
       message: `Simulated: create video audience "${args.name}" — ${args.engagement_type} on video ${args.video_id}`,
@@ -510,7 +510,7 @@ async function createVideoAudience(args: any): Promise<any> {
     },
   };
 
-  const result = await createCustomAudience({
+  const result = await createCustomAudience(ctx, {
     name: args.name,
     subtype: 'ENGAGEMENT',
     ...(args.description && { description: args.description }),
@@ -528,10 +528,10 @@ async function createVideoAudience(args: any): Promise<any> {
   };
 }
 
-async function removeAudience(args: any): Promise<any> {
-  if (config.dryRun) {
+async function removeAudience(ctx: TenantContext, args: any): Promise<any> {
+  if (ctx.dryRun) {
     return { dry_run: true, message: `Simulated: delete audience ${args.audience_id}` };
   }
-  await deleteAudience(args.audience_id);
+  await deleteAudience(ctx, args.audience_id);
   return { success: true, deleted_audience_id: args.audience_id };
 }

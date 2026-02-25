@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import type { TenantContext } from '../tenant-context.js';
 import { rateLimitedCall } from '../utils/rate-limiter.js';
 import {
   fetchCampaigns, fetchAdSets, fetchAds,
@@ -424,38 +424,38 @@ export const managementTools = [
 
 // ── Handlers ──
 
-export async function handleManagementTool(name: string, args: any): Promise<any> {
+export async function handleManagementTool(ctx: TenantContext, name: string, args: any): Promise<any> {
   switch (name) {
-    case 'meta_list_campaigns': return listCampaigns(args);
-    case 'meta_get_campaign': return getCampaignDetails(args);
-    case 'meta_list_adsets': return listAdSets(args);
-    case 'meta_list_ads': return listAds(args);
-    case 'meta_get_insights': return getInsights(args);
-    case 'meta_update_campaign_status': return updateStatus(args);
-    case 'meta_get_account': return getAccountContext();
-    case 'meta_search_targeting': return handleSearchTargeting(args);
-    case 'meta_add_ad': return addAd(args);
-    case 'meta_search_interests': return handleSearchInterests(args);
-    case 'meta_search_behaviors': return handleSearchBehaviors(args);
-    case 'meta_search_demographics': return handleSearchDemographics(args);
-    case 'meta_search_geo_locations': return handleSearchGeoLocations(args);
-    case 'meta_get_interest_suggestions': return handleGetInterestSuggestions(args);
-    case 'meta_estimate_audience_size': return handleEstimateAudienceSize(args);
-    case 'meta_get_ad_image': return handleGetAdImage(args);
-    case 'meta_get_ad_details': return getAdDetails(args);
-    case 'meta_get_adset_details': return getAdSetDetails(args);
-    case 'meta_get_creative_details': return handleGetCreativeDetails(args);
-    case 'meta_list_pages': return handleListPages(args);
-    case 'meta_predict_reach': return handlePredictReach(args);
-    case 'meta_bulk_update_status': return handleBulkUpdateStatus(args);
-    case 'meta_get_ad_preview': return handleGetAdPreview(args);
-    case 'meta_get_account_billing': return handleGetAccountBilling();
-    case 'meta_get_recommendations': return handleGetRecommendations(args);
+    case 'meta_list_campaigns': return listCampaigns(ctx, args);
+    case 'meta_get_campaign': return getCampaignDetails(ctx, args);
+    case 'meta_list_adsets': return listAdSets(ctx, args);
+    case 'meta_list_ads': return listAds(ctx, args);
+    case 'meta_get_insights': return getInsights(ctx, args);
+    case 'meta_update_campaign_status': return updateStatus(ctx, args);
+    case 'meta_get_account': return getAccountContext(ctx);
+    case 'meta_search_targeting': return handleSearchTargeting(ctx, args);
+    case 'meta_add_ad': return addAd(ctx, args);
+    case 'meta_search_interests': return handleSearchInterests(ctx, args);
+    case 'meta_search_behaviors': return handleSearchBehaviors(ctx, args);
+    case 'meta_search_demographics': return handleSearchDemographics(ctx, args);
+    case 'meta_search_geo_locations': return handleSearchGeoLocations(ctx, args);
+    case 'meta_get_interest_suggestions': return handleGetInterestSuggestions(ctx, args);
+    case 'meta_estimate_audience_size': return handleEstimateAudienceSize(ctx, args);
+    case 'meta_get_ad_image': return handleGetAdImage(ctx, args);
+    case 'meta_get_ad_details': return getAdDetails(ctx, args);
+    case 'meta_get_adset_details': return getAdSetDetails(ctx, args);
+    case 'meta_get_creative_details': return handleGetCreativeDetails(ctx, args);
+    case 'meta_list_pages': return handleListPages(ctx, args);
+    case 'meta_predict_reach': return handlePredictReach(ctx, args);
+    case 'meta_bulk_update_status': return handleBulkUpdateStatus(ctx, args);
+    case 'meta_get_ad_preview': return handleGetAdPreview(ctx, args);
+    case 'meta_get_account_billing': return handleGetAccountBilling(ctx);
+    case 'meta_get_recommendations': return handleGetRecommendations(ctx, args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
 }
 
-async function listCampaigns(args: any): Promise<any> {
+async function listCampaigns(ctx: TenantContext, args: any): Promise<any> {
   const limit = args.limit ?? 5;
   const concise = args.response_format === 'concise';
   const params: Record<string, any> = { limit: limit + 1 };
@@ -466,7 +466,7 @@ async function listCampaigns(args: any): Promise<any> {
   if (args.after) params.after = args.after;
 
   const fields = ['id', 'name', 'status', 'effective_status', 'objective', 'daily_budget', 'lifetime_budget', 'buying_type'];
-  const raw = await fetchCampaigns(fields, params);
+  const raw = await fetchCampaigns(ctx, fields, params);
   const hasMore = raw.length > limit;
   const items = raw.slice(0, limit);
 
@@ -491,9 +491,9 @@ async function listCampaigns(args: any): Promise<any> {
   };
 }
 
-async function getCampaignDetails(args: any): Promise<any> {
+async function getCampaignDetails(ctx: TenantContext, args: any): Promise<any> {
   const fields = ['id', 'name', 'status', 'effective_status', 'objective', 'daily_budget', 'lifetime_budget', 'buying_type', 'bid_strategy', 'created_time', 'start_time', 'stop_time'];
-  const c = await readCampaign(args.campaign_id, fields);
+  const c = await readCampaign(ctx, args.campaign_id, fields);
 
   return {
     id: c.id,
@@ -510,7 +510,7 @@ async function getCampaignDetails(args: any): Promise<any> {
   };
 }
 
-async function listAdSets(args: any): Promise<any> {
+async function listAdSets(ctx: TenantContext, args: any): Promise<any> {
   const limit = args.limit ?? 5;
   const concise = args.response_format === 'concise';
   const params: Record<string, any> = { limit };
@@ -525,7 +525,7 @@ async function listAdSets(args: any): Promise<any> {
   }
 
   const fields = ['id', 'name', 'status', 'effective_status', 'daily_budget', 'lifetime_budget', 'bid_strategy', 'optimization_goal', 'targeting'];
-  const raw = await fetchAdSets(fields, params);
+  const raw = await fetchAdSets(ctx, fields, params);
 
   if (concise) {
     return { adsets: raw.slice(0, limit).map((s: any) => ({ id: s.id, name: s.name, status: s.effective_status ?? s.status })) };
@@ -557,7 +557,7 @@ function summarizeTargeting(t: any): string {
   return parts.join(' | ') || 'Broad';
 }
 
-async function listAds(args: any): Promise<any> {
+async function listAds(ctx: TenantContext, args: any): Promise<any> {
   const limit = args.limit ?? 5;
   const params: Record<string, any> = { limit };
   const filtering: any[] = [];
@@ -566,7 +566,7 @@ async function listAds(args: any): Promise<any> {
   if (filtering.length) params.filtering = filtering;
 
   const fields = ['id', 'name', 'status', 'effective_status'];
-  const raw = await fetchAds(fields, params);
+  const raw = await fetchAds(ctx, fields, params);
 
   return {
     ads: raw.slice(0, limit).map((a: any) => ({
@@ -577,7 +577,7 @@ async function listAds(args: any): Promise<any> {
   };
 }
 
-async function getInsights(args: any): Promise<any> {
+async function getInsights(ctx: TenantContext, args: any): Promise<any> {
   const rangeKey = (args.time_range ?? 'last_7d') as TimeRangeKey;
   const range = rangeKey === 'custom'
     ? (() => {
@@ -598,9 +598,9 @@ async function getInsights(args: any): Promise<any> {
 
   let raw: any[];
   if (args.campaign_id && level === 'account') {
-    raw = await fetchCampaignInsights(args.campaign_id, { time_range: range });
+    raw = await fetchCampaignInsights(ctx, args.campaign_id, { time_range: range });
   } else {
-    raw = await fetchAccountInsights(params);
+    raw = await fetchAccountInsights(ctx, params);
   }
 
   if (!raw.length) {
@@ -635,16 +635,16 @@ async function getInsights(args: any): Promise<any> {
   return raw.slice(0, limit).map(mapRow);
 }
 
-async function updateStatus(args: any): Promise<any> {
-  if (config.dryRun) {
+async function updateStatus(ctx: TenantContext, args: any): Promise<any> {
+  if (ctx.dryRun) {
     return { dry_run: true, message: `Simulated: Campaign ${args.campaign_id} -> ${args.status}` };
   }
-  await apiUpdateStatus(args.campaign_id, args.status);
+  await apiUpdateStatus(ctx, args.campaign_id, args.status);
   return { success: true, campaign_id: args.campaign_id, new_status: args.status };
 }
 
-async function handleSearchTargeting(args: any): Promise<any> {
-  const results = await searchTargeting(args.type, args.query);
+async function handleSearchTargeting(ctx: TenantContext, args: any): Promise<any> {
+  const results = await searchTargeting(ctx, args.type, args.query);
   return {
     type: args.type,
     query: args.query,
@@ -673,8 +673,8 @@ function formatTargetingRow(r: any) {
   };
 }
 
-async function handleSearchInterests(args: any): Promise<any> {
-  const results = await searchTargetingExtended('adinterest', args.query, { limit: args.limit ?? 25 });
+async function handleSearchInterests(ctx: TenantContext, args: any): Promise<any> {
+  const results = await searchTargetingExtended(ctx, 'adinterest', args.query, { limit: args.limit ?? 25 });
   return {
     query: args.query,
     results: results.map(formatTargetingRow),
@@ -682,8 +682,8 @@ async function handleSearchInterests(args: any): Promise<any> {
   };
 }
 
-async function handleSearchBehaviors(args: any): Promise<any> {
-  const results = await searchTargetingExtended('adTargetingCategory', args.query, { class: 'behaviors', limit: args.limit ?? 25 });
+async function handleSearchBehaviors(ctx: TenantContext, args: any): Promise<any> {
+  const results = await searchTargetingExtended(ctx, 'adTargetingCategory', args.query, { class: 'behaviors', limit: args.limit ?? 25 });
   return {
     query: args.query,
     results: results.map(formatTargetingRow),
@@ -691,8 +691,8 @@ async function handleSearchBehaviors(args: any): Promise<any> {
   };
 }
 
-async function handleSearchDemographics(args: any): Promise<any> {
-  const results = await searchTargetingExtended('adTargetingCategory', args.query ?? '', { class: args.class, limit: args.limit ?? 25 });
+async function handleSearchDemographics(ctx: TenantContext, args: any): Promise<any> {
+  const results = await searchTargetingExtended(ctx, 'adTargetingCategory', args.query ?? '', { class: args.class, limit: args.limit ?? 25 });
   return {
     class: args.class,
     query: args.query ?? '',
@@ -701,9 +701,9 @@ async function handleSearchDemographics(args: any): Promise<any> {
   };
 }
 
-async function handleSearchGeoLocations(args: any): Promise<any> {
+async function handleSearchGeoLocations(ctx: TenantContext, args: any): Promise<any> {
   const locationTypes = args.location_types ?? [];
-  const results = await searchGeoLocations(args.query, locationTypes, args.limit ?? 25);
+  const results = await searchGeoLocations(ctx, args.query, locationTypes, args.limit ?? 25);
   return {
     query: args.query,
     results: results.map((r: any) => ({
@@ -718,18 +718,18 @@ async function handleSearchGeoLocations(args: any): Promise<any> {
   };
 }
 
-async function handleGetInterestSuggestions(args: any): Promise<any> {
-  const results = await getInterestSuggestions(args.interest_ids, args.limit ?? 25);
+async function handleGetInterestSuggestions(ctx: TenantContext, args: any): Promise<any> {
+  const results = await getInterestSuggestions(ctx, args.interest_ids, args.limit ?? 25);
   return {
     interest_ids: args.interest_ids,
     suggestions: results.map(formatTargetingRow),
   };
 }
 
-async function handleEstimateAudienceSize(args: any): Promise<any> {
+async function handleEstimateAudienceSize(ctx: TenantContext, args: any): Promise<any> {
   const targetingSpec = buildTargetingSpec(args.targeting);
   const goal = args.optimization_goal ?? 'IMPRESSIONS';
-  const estimate = await estimateAudienceSize(targetingSpec, goal);
+  const estimate = await estimateAudienceSize(ctx, targetingSpec, goal);
   if (!estimate) return { estimate_ready: false, message: 'No estimate available for this targeting configuration.' };
   return {
     estimate_ready: estimate.estimate_ready,
@@ -741,7 +741,7 @@ async function handleEstimateAudienceSize(args: any): Promise<any> {
   };
 }
 
-async function handleGetAdImage(args: any): Promise<any> {
+async function handleGetAdImage(ctx: TenantContext, args: any): Promise<any> {
   if (!args.ad_id && !args.creative_id) {
     throw new Error('Provide either ad_id or creative_id');
   }
@@ -751,10 +751,10 @@ async function handleGetAdImage(args: any): Promise<any> {
   if (!creativeId && args.ad_id) {
     // Fetch creative ID from ad
     const qp = new URLSearchParams({
-      access_token: config.accessToken,
+      access_token: ctx.accessToken,
       fields: 'creative{id,thumbnail_url,image_url}',
     });
-    const response = await fetch(`https://graph.facebook.com/${config.apiVersion}/${args.ad_id}?${qp.toString()}`);
+    const response = await fetch(`https://graph.facebook.com/${ctx.apiVersion}/${args.ad_id}?${qp.toString()}`);
     const data = await response.json() as any;
     if (!response.ok || data.error) {
       const e = data.error ?? {};
@@ -764,7 +764,7 @@ async function handleGetAdImage(args: any): Promise<any> {
     if (!creativeId) throw new Error('Could not find creative for ad ' + args.ad_id);
   }
 
-  const creative = await getCreativeDetails(creativeId);
+  const creative = await getCreativeDetails(ctx, creativeId);
   const imageUrl = creative.thumbnail_url ?? creative.image_url;
   if (!imageUrl) throw new Error('No image URL found for creative ' + creativeId);
 
@@ -778,8 +778,8 @@ async function handleGetAdImage(args: any): Promise<any> {
   };
 }
 
-async function getAdDetails(args: any): Promise<any> {
-  const ad = await apiGetAdDetails(args.ad_id);
+async function getAdDetails(ctx: TenantContext, args: any): Promise<any> {
+  const ad = await apiGetAdDetails(ctx, args.ad_id);
   return {
     id: ad.id,
     name: ad.name,
@@ -801,8 +801,8 @@ async function getAdDetails(args: any): Promise<any> {
   };
 }
 
-async function getAdSetDetails(args: any): Promise<any> {
-  const s = await apiGetAdSetDetails(args.adset_id);
+async function getAdSetDetails(ctx: TenantContext, args: any): Promise<any> {
+  const s = await apiGetAdSetDetails(ctx, args.adset_id);
   return {
     id: s.id,
     name: s.name,
@@ -826,8 +826,8 @@ async function getAdSetDetails(args: any): Promise<any> {
   };
 }
 
-async function handleGetCreativeDetails(args: any): Promise<any> {
-  const c = await getCreativeDetails(args.creative_id);
+async function handleGetCreativeDetails(ctx: TenantContext, args: any): Promise<any> {
+  const c = await getCreativeDetails(ctx, args.creative_id);
   return {
     id: c.id,
     name: c.name,
@@ -838,8 +838,8 @@ async function handleGetCreativeDetails(args: any): Promise<any> {
   };
 }
 
-async function handleListPages(args: any): Promise<any> {
-  const pages = await listPages(args.limit ?? 25);
+async function handleListPages(ctx: TenantContext, args: any): Promise<any> {
+  const pages = await listPages(ctx, args.limit ?? 25);
   return {
     pages: pages.map((p: any) => ({
       id: p.id,
@@ -852,12 +852,12 @@ async function handleListPages(args: any): Promise<any> {
   };
 }
 
-async function handlePredictReach(args: any): Promise<any> {
+async function handlePredictReach(ctx: TenantContext, args: any): Promise<any> {
   const targetingSpec = buildTargetingSpec(args.targeting);
   const goal = args.optimization_goal ?? 'IMPRESSIONS';
   const budgetCents = args.daily_budget_usd ? Math.round(args.daily_budget_usd * 100) : undefined;
 
-  const estimate = await estimateAudienceSize(targetingSpec, goal, budgetCents);
+  const estimate = await estimateAudienceSize(ctx, targetingSpec, goal, budgetCents);
   if (!estimate) return { estimate_ready: false, message: 'No estimate available for this targeting configuration.' };
 
   const result: Record<string, any> = {
@@ -880,12 +880,12 @@ async function handlePredictReach(args: any): Promise<any> {
   return result;
 }
 
-async function handleBulkUpdateStatus(args: any): Promise<any> {
-  if (config.dryRun) {
+async function handleBulkUpdateStatus(ctx: TenantContext, args: any): Promise<any> {
+  if (ctx.dryRun) {
     return { dry_run: true, message: `Simulated: set ${args.ids.length} objects to ${args.status}`, ids: args.ids };
   }
 
-  const results = await batchUpdateStatus(args.ids, args.status);
+  const results = await batchUpdateStatus(ctx, args.ids, args.status);
   const summary = results.map((r: any, i: number) => {
     const body = r.body ? (() => { try { return JSON.parse(r.body); } catch { return {}; } })() : {};
     return {
@@ -905,13 +905,13 @@ async function handleBulkUpdateStatus(args: any): Promise<any> {
   };
 }
 
-async function addAd(args: any): Promise<any> {
-  if (config.dryRun) {
+async function addAd(ctx: TenantContext, args: any): Promise<any> {
+  if (ctx.dryRun) {
     return { dry_run: true, message: `Simulated: Ad "${args.ad_name}" in adset ${args.adset_id}` };
   }
 
   try {
-    const result = await createAd({
+    const result = await createAd(ctx, {
       name: args.ad_name,
       status: args.status ?? 'PAUSED',
       adset_id: args.adset_id,
@@ -951,10 +951,10 @@ async function addAd(args: any): Promise<any> {
   }
 }
 
-async function handleGetAdPreview(args: any): Promise<any> {
+async function handleGetAdPreview(ctx: TenantContext, args: any): Promise<any> {
   const format = args.ad_format ?? 'DESKTOP_FEED_STANDARD';
   const result = await rateLimitedCall(() =>
-    graphGet(`${args.ad_id}/previews`, { ad_format: format }),
+    graphGet(ctx, `${args.ad_id}/previews`, { ad_format: format }),
   );
 
   const preview = result.data?.[0];
@@ -969,9 +969,9 @@ async function handleGetAdPreview(args: any): Promise<any> {
   };
 }
 
-async function handleGetAccountBilling(): Promise<any> {
+async function handleGetAccountBilling(ctx: TenantContext): Promise<any> {
   const result = await rateLimitedCall(() =>
-    graphGet(config.adAccountId, {
+    graphGet(ctx, ctx.adAccountId, {
       fields: 'amount_spent,spend_cap,balance,currency,funding_source_details',
     }),
   );
@@ -990,9 +990,9 @@ async function handleGetAccountBilling(): Promise<any> {
   };
 }
 
-async function handleGetRecommendations(args: any): Promise<any> {
+async function handleGetRecommendations(ctx: TenantContext, args: any): Promise<any> {
   const result = await rateLimitedCall(() =>
-    graphGet(`${config.adAccountId}/recommendations`, {
+    graphGet(ctx, `${ctx.adAccountId}/recommendations`, {
       fields: 'title,message,blame_field,code,confidence,estimated_daily_results,importance,recommendation_data',
       limit: args.limit ?? 10,
     }),

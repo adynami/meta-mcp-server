@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import type { TenantContext } from '../tenant-context.js';
 import { rateLimitedCall } from '../utils/rate-limiter.js';
 
 // ── Tool definition ──────────────────────────────────────────────────────────
@@ -66,20 +66,20 @@ const AD_LIBRARY_FIELDS = [
 
 // ── Handler ──────────────────────────────────────────────────────────────────
 
-export async function handleAdLibraryTool(name: string, args: any): Promise<any> {
+export async function handleAdLibraryTool(ctx: TenantContext, name: string, args: any): Promise<any> {
   switch (name) {
-    case 'meta_search_ad_library': return searchAdLibrary(args);
+    case 'meta_search_ad_library': return searchAdLibrary(ctx, args);
     default: throw new Error(`Unknown ad library tool: ${name}`);
   }
 }
 
-async function searchAdLibrary(args: any): Promise<any> {
+async function searchAdLibrary(ctx: TenantContext, args: any): Promise<any> {
   const countries = args.countries ?? ['US'];
   const limit = args.limit ?? 20;
 
   return rateLimitedCall(async () => {
     const qp = new URLSearchParams({
-      access_token: config.accessToken,
+      access_token: ctx.accessToken,
       search_terms: args.search_terms,
       ad_reached_countries: JSON.stringify(countries),
       ad_type: 'ALL',
@@ -95,7 +95,7 @@ async function searchAdLibrary(args: any): Promise<any> {
       qp.append('search_page_ids', JSON.stringify(args.search_page_ids));
     }
 
-    const url = `https://graph.facebook.com/${config.apiVersion}/ads_archive?${qp.toString()}`;
+    const url = `https://graph.facebook.com/${ctx.apiVersion}/ads_archive?${qp.toString()}`;
     const response = await fetch(url);
     const data = await response.json() as any;
 

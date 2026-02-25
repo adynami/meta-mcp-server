@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import type { TenantContext } from '../tenant-context.js';
 import { rateLimitedCall } from '../utils/rate-limiter.js';
 import { graphGet, graphPost, graphDelete } from '../utils/graph.js';
 
@@ -93,20 +93,20 @@ Always confirm with the user before deleting.`,
 
 // ── Handler ──────────────────────────────────────────────────────────────────
 
-export async function handleBudgetScheduleTool(name: string, args: any): Promise<any> {
+export async function handleBudgetScheduleTool(ctx: TenantContext, name: string, args: any): Promise<any> {
   switch (name) {
-    case 'meta_list_budget_schedules': return listBudgetSchedules(args);
-    case 'meta_create_budget_schedule': return createBudgetSchedule(args);
-    case 'meta_delete_budget_schedule': return deleteBudgetSchedule(args);
+    case 'meta_list_budget_schedules': return listBudgetSchedules(ctx, args);
+    case 'meta_create_budget_schedule': return createBudgetSchedule(ctx, args);
+    case 'meta_delete_budget_schedule': return deleteBudgetSchedule(ctx, args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
 }
 
 // ── Implementations ──────────────────────────────────────────────────────────
 
-async function listBudgetSchedules(args: any): Promise<any> {
+async function listBudgetSchedules(ctx: TenantContext, args: any): Promise<any> {
   const result = await rateLimitedCall(() =>
-    graphGet(`${args.campaign_id}/budget_schedules`, {
+    graphGet(ctx, `${args.campaign_id}/budget_schedules`, {
       fields: 'id,budget_value,budget_value_type,time_start,time_end,status',
     }),
   );
@@ -131,7 +131,7 @@ async function listBudgetSchedules(args: any): Promise<any> {
   };
 }
 
-async function createBudgetSchedule(args: any): Promise<any> {
+async function createBudgetSchedule(ctx: TenantContext, args: any): Promise<any> {
   // Basic validation
   const durationHours = (args.time_end - args.time_start) / 3600;
   if (durationHours < 3) {
@@ -141,7 +141,7 @@ async function createBudgetSchedule(args: any): Promise<any> {
     };
   }
 
-  if (config.dryRun) {
+  if (ctx.dryRun) {
     const startHuman = new Date(args.time_start * 1000).toISOString();
     const endHuman = new Date(args.time_end * 1000).toISOString();
     return {
@@ -151,7 +151,7 @@ async function createBudgetSchedule(args: any): Promise<any> {
   }
 
   const result = await rateLimitedCall(() =>
-    graphPost(`${args.campaign_id}/budget_schedules`, {
+    graphPost(ctx, `${args.campaign_id}/budget_schedules`, {
       budget_value: args.budget_value,
       budget_value_type: args.budget_value_type,
       time_start: args.time_start,
@@ -176,12 +176,12 @@ async function createBudgetSchedule(args: any): Promise<any> {
   };
 }
 
-async function deleteBudgetSchedule(args: any): Promise<any> {
-  if (config.dryRun) {
+async function deleteBudgetSchedule(ctx: TenantContext, args: any): Promise<any> {
+  if (ctx.dryRun) {
     return { dry_run: true, message: `Simulated: delete budget schedule ${args.budget_schedule_id}` };
   }
 
-  await rateLimitedCall(() => graphDelete(args.budget_schedule_id));
+  await rateLimitedCall(() => graphDelete(ctx, args.budget_schedule_id));
 
   return {
     success: true,

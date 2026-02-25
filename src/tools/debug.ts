@@ -1,3 +1,4 @@
+import type { TenantContext } from '../tenant-context.js';
 import { readAd, readAdSet, readCampaign, fetchCampaignInsights } from '../meta-client.js';
 import { resolveRange } from '../utils/date-ranges.js';
 import { computeMetrics, type RawInsightRow } from '../utils/metrics.js';
@@ -23,8 +24,8 @@ Returns a health score (HEALTHY/NEEDS_ATTENTION/CRITICAL) and actionable fix sug
   },
 ];
 
-export async function handleDebugTool(name: string, args: any): Promise<any> {
-  if (name === 'meta_debug_ad') return debugAdSetup(args);
+export async function handleDebugTool(ctx: TenantContext, name: string, args: any): Promise<any> {
+  if (name === 'meta_debug_ad') return debugAdSetup(ctx, args);
   throw new Error(`Unknown tool: ${name}`);
 }
 
@@ -34,11 +35,11 @@ interface Issue {
   message: string;
 }
 
-async function debugAdSetup(args: any): Promise<any> {
+async function debugAdSetup(ctx: TenantContext, args: any): Promise<any> {
   const adId = args.ad_id;
   const issues: Issue[] = [];
 
-  const ad = await readAd(adId, [
+  const ad = await readAd(ctx, adId, [
     'id', 'name', 'status', 'effective_status',
     'configured_status', 'ad_review_feedback',
     'issues_info', 'adset_id', 'campaign_id',
@@ -76,7 +77,7 @@ async function debugAdSetup(args: any): Promise<any> {
   // Ad set checks
   let adsetName = '';
   try {
-    const adset = await readAdSet(ad.adset_id, [
+    const adset = await readAdSet(ctx, ad.adset_id, [
       'id', 'name', 'status', 'effective_status',
       'daily_budget', 'budget_remaining', 'learning_stage_info',
     ]);
@@ -102,7 +103,7 @@ async function debugAdSetup(args: any): Promise<any> {
   // Campaign checks
   let campaignName = '';
   try {
-    const campaign = await readCampaign(ad.campaign_id, ['id', 'name', 'status', 'effective_status', 'budget_remaining']);
+    const campaign = await readCampaign(ctx, ad.campaign_id, ['id', 'name', 'status', 'effective_status', 'budget_remaining']);
     campaignName = campaign.name;
 
     if (campaign.effective_status === 'PAUSED') {
@@ -119,7 +120,7 @@ async function debugAdSetup(args: any): Promise<any> {
   let perfNote: string | null = null;
   try {
     const range = resolveRange('last_3d');
-    const insights = await fetchCampaignInsights(ad.campaign_id, { time_range: range });
+    const insights = await fetchCampaignInsights(ctx, ad.campaign_id, { time_range: range });
     if (insights.length) {
       const m = computeMetrics(insights[0] as RawInsightRow);
       if (m.impressions === 0) perfNote = 'Zero impressions in 3 days — likely blocked by review, budget, or targeting.';

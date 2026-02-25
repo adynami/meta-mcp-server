@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import type { TenantContext } from '../tenant-context.js';
 import { rateLimitedCall } from '../utils/rate-limiter.js';
 import { graphGet } from '../utils/graph.js';
 
@@ -31,17 +31,17 @@ export const libraryTools = [
 
 // ── Handler ──
 
-export async function handleLibraryTool(name: string, args: any): Promise<any> {
+export async function handleLibraryTool(ctx: TenantContext, name: string, args: any): Promise<any> {
   switch (name) {
-    case 'meta_list_ad_images': return listAdImages(args);
-    case 'meta_list_ad_videos': return listAdVideos(args);
+    case 'meta_list_ad_images': return listAdImages(ctx, args);
+    case 'meta_list_ad_videos': return listAdVideos(ctx, args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
 }
 
 // ── Implementations ──
 
-async function listAdImages(args: any): Promise<any> {
+async function listAdImages(ctx: TenantContext, args: any): Promise<any> {
   const params: Record<string, any> = {
     fields: 'hash,name,url,width,height,status,created_time',
     limit: args.limit ?? 25,
@@ -49,7 +49,7 @@ async function listAdImages(args: any): Promise<any> {
   if (args.after) params.after = args.after;
 
   const result = await rateLimitedCall(() =>
-    graphGet(`${config.adAccountId}/adimages`, params),
+    graphGet(ctx, `${ctx.adAccountId}/adimages`, params),
   );
 
   const images = (result.data ?? []).map((img: any) => ({
@@ -71,7 +71,7 @@ async function listAdImages(args: any): Promise<any> {
   };
 }
 
-async function listAdVideos(args: any): Promise<any> {
+async function listAdVideos(ctx: TenantContext, args: any): Promise<any> {
   const params: Record<string, any> = {
     fields: 'id,title,description,length,status,created_time,picture',
     limit: args.limit ?? 25,
@@ -79,7 +79,7 @@ async function listAdVideos(args: any): Promise<any> {
   if (args.after) params.after = args.after;
 
   const result = await rateLimitedCall(() =>
-    graphGet(`${config.adAccountId}/advideos`, params),
+    graphGet(ctx, `${ctx.adAccountId}/advideos`, params),
   );
 
   const videos = (result.data ?? []).map((v: any) => ({

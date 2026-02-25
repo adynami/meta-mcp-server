@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import type { TenantContext } from '../tenant-context.js';
 import { rateLimitedCall } from '../utils/rate-limiter.js';
 import { graphGet, graphPost, graphDelete } from '../utils/graph.js';
 
@@ -173,21 +173,21 @@ Always confirm with the user before deleting.`,
 
 // ── Handler ──────────────────────────────────────────────────────────────────
 
-export async function handleValueRulesTool(name: string, args: any): Promise<any> {
+export async function handleValueRulesTool(ctx: TenantContext, name: string, args: any): Promise<any> {
   switch (name) {
-    case 'meta_list_value_rules': return listValueRules(args);
-    case 'meta_create_value_rule': return createValueRule(args);
-    case 'meta_update_value_rule': return updateValueRule(args);
-    case 'meta_delete_value_rule': return deleteValueRule(args);
+    case 'meta_list_value_rules': return listValueRules(ctx, args);
+    case 'meta_create_value_rule': return createValueRule(ctx, args);
+    case 'meta_update_value_rule': return updateValueRule(ctx, args);
+    case 'meta_delete_value_rule': return deleteValueRule(ctx, args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
 }
 
 // ── Implementations ──────────────────────────────────────────────────────────
 
-async function listValueRules(args: any): Promise<any> {
+async function listValueRules(ctx: TenantContext, args: any): Promise<any> {
   const result = await rateLimitedCall(() =>
-    graphGet(`${config.adAccountId}/value_rules`, {
+    graphGet(ctx, `${ctx.adAccountId}/value_rules`, {
       fields: 'id,name,status,priority,conditions,value_adjustment',
       limit: args.limit ?? 25,
     }),
@@ -214,8 +214,8 @@ async function listValueRules(args: any): Promise<any> {
   };
 }
 
-async function createValueRule(args: any): Promise<any> {
-  if (config.dryRun) {
+async function createValueRule(ctx: TenantContext, args: any): Promise<any> {
+  if (ctx.dryRun) {
     const conditionSummary = (args.conditions as any[])
       .map((c: any) => `${c.field} ${c.operator} [${c.values.join(', ')}]`)
       .join(' AND ');
@@ -243,9 +243,9 @@ async function createValueRule(args: any): Promise<any> {
   // Create at campaign level if campaign_id provided, else account level
   const endpoint = args.campaign_id
     ? `${args.campaign_id}/value_rules`
-    : `${config.adAccountId}/value_rules`;
+    : `${ctx.adAccountId}/value_rules`;
 
-  const result = await rateLimitedCall(() => graphPost(endpoint, params));
+  const result = await rateLimitedCall(() => graphPost(ctx, endpoint, params));
 
   return {
     success: true,
@@ -260,7 +260,7 @@ async function createValueRule(args: any): Promise<any> {
   };
 }
 
-async function updateValueRule(args: any): Promise<any> {
+async function updateValueRule(ctx: TenantContext, args: any): Promise<any> {
   const updates: string[] = [];
   const params: Record<string, any> = {};
 
@@ -284,14 +284,14 @@ async function updateValueRule(args: any): Promise<any> {
     return { success: false, error: 'No fields to update were provided.' };
   }
 
-  if (config.dryRun) {
+  if (ctx.dryRun) {
     return {
       dry_run: true,
       message: `Simulated: update value rule ${args.value_rule_id} — ${updates.join(', ')}`,
     };
   }
 
-  await rateLimitedCall(() => graphPost(args.value_rule_id, params));
+  await rateLimitedCall(() => graphPost(ctx, args.value_rule_id, params));
 
   return {
     success: true,
@@ -300,12 +300,12 @@ async function updateValueRule(args: any): Promise<any> {
   };
 }
 
-async function deleteValueRule(args: any): Promise<any> {
-  if (config.dryRun) {
+async function deleteValueRule(ctx: TenantContext, args: any): Promise<any> {
+  if (ctx.dryRun) {
     return { dry_run: true, message: `Simulated: delete value rule ${args.value_rule_id}` };
   }
 
-  await rateLimitedCall(() => graphDelete(args.value_rule_id));
+  await rateLimitedCall(() => graphDelete(ctx, args.value_rule_id));
 
   return {
     success: true,

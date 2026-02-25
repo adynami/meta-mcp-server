@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import type { TenantContext } from '../tenant-context.js';
 import { rateLimitedCall } from '../utils/rate-limiter.js';
 import { graphGet, graphPost, graphDelete } from '../utils/graph.js';
 
@@ -121,21 +121,21 @@ This is a write operation — confirm all details before calling.`,
 
 // ── Handler ──
 
-export async function handleRulesTool(name: string, args: any): Promise<any> {
+export async function handleRulesTool(ctx: TenantContext, name: string, args: any): Promise<any> {
   switch (name) {
-    case 'meta_list_rules': return listRules(args);
-    case 'meta_create_rule': return createRule(args);
-    case 'meta_update_rule': return updateRule(args);
-    case 'meta_delete_rule': return deleteRule(args);
+    case 'meta_list_rules': return listRules(ctx, args);
+    case 'meta_create_rule': return createRule(ctx, args);
+    case 'meta_update_rule': return updateRule(ctx, args);
+    case 'meta_delete_rule': return deleteRule(ctx, args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
 }
 
 // ── Implementations ──
 
-async function listRules(args: any): Promise<any> {
+async function listRules(ctx: TenantContext, args: any): Promise<any> {
   const result = await rateLimitedCall(() =>
-    graphGet(`${config.adAccountId}/adrules_library`, {
+    graphGet(ctx, `${ctx.adAccountId}/adrules_library`, {
       fields: 'id,name,status,evaluation_spec,execution_spec,schedule_spec,entity_type',
       limit: args.limit ?? 25,
     }),
@@ -160,8 +160,8 @@ async function listRules(args: any): Promise<any> {
   return { rules, total: rules.length };
 }
 
-async function createRule(args: any): Promise<any> {
-  if (config.dryRun) {
+async function createRule(ctx: TenantContext, args: any): Promise<any> {
+  if (ctx.dryRun) {
     const conditionSummary = (args.conditions ?? [])
       .map((c: any) => `${c.field} ${c.operator} ${c.value}`)
       .join(' AND ');
@@ -198,7 +198,7 @@ async function createRule(args: any): Promise<any> {
   };
 
   const result = await rateLimitedCall(() =>
-    graphPost(`${config.adAccountId}/adrules_library`, {
+    graphPost(ctx, `${ctx.adAccountId}/adrules_library`, {
       name: args.name,
       entity_type: args.entity_type,
       evaluation_spec,
@@ -220,11 +220,11 @@ async function createRule(args: any): Promise<any> {
   };
 }
 
-async function updateRule(args: any): Promise<any> {
+async function updateRule(ctx: TenantContext, args: any): Promise<any> {
   if (!args.status && !args.name) {
     return { success: false, error: 'Provide at least one of: status or name to update.' };
   }
-  if (config.dryRun) {
+  if (ctx.dryRun) {
     return { dry_run: true, message: `Simulated: update rule ${args.rule_id}${args.status ? ` → ${args.status}` : ''}${args.name ? ` rename to "${args.name}"` : ''}` };
   }
 
@@ -232,7 +232,7 @@ async function updateRule(args: any): Promise<any> {
   if (args.status) updates.status = args.status;
   if (args.name) updates.name = args.name;
 
-  await rateLimitedCall(() => graphPost(args.rule_id, updates));
+  await rateLimitedCall(() => graphPost(ctx, args.rule_id, updates));
   return {
     success: true,
     rule_id: args.rule_id,
@@ -241,10 +241,10 @@ async function updateRule(args: any): Promise<any> {
   };
 }
 
-async function deleteRule(args: any): Promise<any> {
-  if (config.dryRun) {
+async function deleteRule(ctx: TenantContext, args: any): Promise<any> {
+  if (ctx.dryRun) {
     return { dry_run: true, message: `Simulated: delete rule ${args.rule_id}` };
   }
-  await rateLimitedCall(() => graphDelete(args.rule_id));
+  await rateLimitedCall(() => graphDelete(ctx, args.rule_id));
   return { success: true, deleted_rule_id: args.rule_id };
 }

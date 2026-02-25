@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { config } from '../config.js';
+import type { TenantContext } from '../tenant-context.js';
 import { rateLimitedCall } from '../utils/rate-limiter.js';
 
 export const conversionsTools = [
@@ -88,9 +88,9 @@ This is a write operation — confirm all details before calling.`,
   },
 ];
 
-export async function handleConversionsTool(name: string, args: any): Promise<any> {
+export async function handleConversionsTool(ctx: TenantContext, name: string, args: any): Promise<any> {
   switch (name) {
-    case 'meta_send_conversions_event': return sendConversionsEvent(args);
+    case 'meta_send_conversions_event': return sendConversionsEvent(ctx, args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
 }
@@ -118,7 +118,7 @@ function buildUserData(raw: Record<string, any>): Record<string, any> {
   return out;
 }
 
-async function sendConversionsEvent(args: any): Promise<any> {
+async function sendConversionsEvent(ctx: TenantContext, args: any): Promise<any> {
   const eventName = args.event_name === 'Other' && args.custom_event_name
     ? args.custom_event_name
     : args.event_name;
@@ -152,7 +152,7 @@ async function sendConversionsEvent(args: any): Promise<any> {
 
   const signalsSent = Object.keys(userData);
 
-  if (config.dryRun) {
+  if (ctx.dryRun) {
     return {
       dry_run: true,
       message: `Simulated: send ${eventName} to pixel ${args.pixel_id}`,
@@ -164,12 +164,12 @@ async function sendConversionsEvent(args: any): Promise<any> {
 
   const body: Record<string, any> = {
     data: [event],
-    access_token: config.accessToken,
+    access_token: ctx.accessToken,
   };
   if (args.test_event_code) body.test_event_code = args.test_event_code;
 
   const result = await rateLimitedCall(async () => {
-    const url = `https://graph.facebook.com/${config.apiVersion}/${args.pixel_id}/events`;
+    const url = `https://graph.facebook.com/${ctx.apiVersion}/${args.pixel_id}/events`;
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import type { TenantContext } from '../tenant-context.js';
 
 export function validateMetaId(id: string): void {
   if (!/^\d+$/.test(id) && !/^act_\d+$/.test(id)) {
@@ -6,12 +6,12 @@ export function validateMetaId(id: string): void {
   }
 }
 
-export async function graphGet(objectPath: string, params: Record<string, any> = {}): Promise<any> {
-  const qp = new URLSearchParams({ access_token: config.accessToken });
+export async function graphGet(ctx: TenantContext, objectPath: string, params: Record<string, any> = {}): Promise<any> {
+  const qp = new URLSearchParams({ access_token: ctx.accessToken });
   for (const [k, v] of Object.entries(params)) {
     qp.append(k, typeof v === 'object' ? JSON.stringify(v) : String(v));
   }
-  const url = `https://graph.facebook.com/${config.apiVersion}/${objectPath}?${qp.toString()}`;
+  const url = `https://graph.facebook.com/${ctx.apiVersion}/${objectPath}?${qp.toString()}`;
   const response = await fetch(url);
   const data = await response.json() as any;
   if (!response.ok || data.error) {
@@ -23,10 +23,10 @@ export async function graphGet(objectPath: string, params: Record<string, any> =
   return data;
 }
 
-export async function graphPost(objectPath: string, params: Record<string, any>): Promise<any> {
-  const url = `https://graph.facebook.com/${config.apiVersion}/${objectPath}`;
+export async function graphPost(ctx: TenantContext, objectPath: string, params: Record<string, any>): Promise<any> {
+  const url = `https://graph.facebook.com/${ctx.apiVersion}/${objectPath}`;
   const formBody = new URLSearchParams();
-  formBody.append('access_token', config.accessToken);
+  formBody.append('access_token', ctx.accessToken);
   for (const [k, v] of Object.entries(params)) {
     formBody.append(k, typeof v === 'object' ? JSON.stringify(v) : String(v));
   }
@@ -45,9 +45,9 @@ export async function graphPost(objectPath: string, params: Record<string, any>)
   return data;
 }
 
-export async function graphDelete(objectPath: string): Promise<any> {
-  const url = `https://graph.facebook.com/${config.apiVersion}/${objectPath}`;
-  const formBody = new URLSearchParams({ access_token: config.accessToken });
+export async function graphDelete(ctx: TenantContext, objectPath: string): Promise<any> {
+  const url = `https://graph.facebook.com/${ctx.apiVersion}/${objectPath}`;
+  const formBody = new URLSearchParams({ access_token: ctx.accessToken });
   const response = await fetch(url, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

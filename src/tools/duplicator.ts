@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import type { TenantContext } from '../tenant-context.js';
 import { rateLimitedCall } from '../utils/rate-limiter.js';
 import { graphGet, graphPost } from '../utils/graph.js';
 
@@ -76,11 +76,11 @@ export const duplicatorTools = [
 
 // ── Handler ──
 
-export async function handleDuplicatorTool(name: string, args: any): Promise<any> {
+export async function handleDuplicatorTool(ctx: TenantContext, name: string, args: any): Promise<any> {
   switch (name) {
-    case 'meta_duplicate_campaign': return duplicateCampaign(args);
-    case 'meta_duplicate_adset': return duplicateAdSet(args);
-    case 'meta_duplicate_creative': return duplicateCreative(args);
+    case 'meta_duplicate_campaign': return duplicateCampaign(ctx, args);
+    case 'meta_duplicate_adset': return duplicateAdSet(ctx, args);
+    case 'meta_duplicate_creative': return duplicateCreative(ctx, args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
 }
@@ -88,7 +88,7 @@ export async function handleDuplicatorTool(name: string, args: any): Promise<any
 // ── Helpers ──
 
 /** Fetch all ad sets for a campaign, auto-paginating. */
-async function fetchAllAdSets(campaignId: string): Promise<any[]> {
+async function fetchAllAdSets(ctx: TenantContext, campaignId: string): Promise<any[]> {
   const adSets: any[] = [];
   let cursor: string | null = null;
 
@@ -96,7 +96,7 @@ async function fetchAllAdSets(campaignId: string): Promise<any[]> {
     const params: Record<string, any> = { fields: 'id,name,status', limit: 25 };
     if (cursor) params.after = cursor;
 
-    const resp = await rateLimitedCall(() => graphGet(`${campaignId}/adsets`, params));
+    const resp = await rateLimitedCall(() => graphGet(ctx, `${campaignId}/adsets`, params));
     adSets.push(...(resp.data ?? []));
     cursor = resp.paging?.cursors?.after && resp.paging?.next ? resp.paging.cursors.after : null;
   } while (cursor);
@@ -105,7 +105,7 @@ async function fetchAllAdSets(campaignId: string): Promise<any[]> {
 }
 
 /** Poll an async Graph API session until completed or failed (~20 min max with exponential backoff). */
-async function pollAsyncSession(sessionId: string, maxAttempts = 50): Promise<string> {
+async function pollAsyncSession(ctx: TenantContext, sessionId: string, maxAttempts = 50): Promise<string> {
   const BASE_MS = 5_000;
   const MAX_MS = 30_000;
 
@@ -116,7 +116,7 @@ async function pollAsyncSession(sessionId: string, maxAttempts = 50): Promise<st
     }
 
     const session = await rateLimitedCall(() =>
-      graphGet(sessionId, {
+      graphGet(ctx, sessionId, {
         fields: 'id,status,result,results,error_message,error_code,error_subcode,error_user_title,error_user_msg',
       }),
     );
@@ -160,10 +160,10 @@ async function pollAsyncSession(sessionId: string, maxAttempts = 50): Promise<st
 
 // ── Implementation ──
 
-async function duplicateAdSet(args: any): Promise<any> {
+async function duplicateAdSet(ctx: TenantContext, args: any): Promise<any> {
   const { adset_id, target_campaign_id, new_name, deep_copy = true, status = 'PAUSED' } = args;
 
-  if (config.dryRun) {
+  if (ctx.dryRun) {
     return {
       dry_run: true,
       message: `Simulated: Duplicate ad set ${adset_id}${target_campaign_id ? ` into campaign ${target_campaign_id}` : ''}`,
@@ -186,11 +186,11 @@ async function duplicateAdSet(args: any): Promise<any> {
 
   const sessionId = await rateLimitedCall(async () => {
     const formBody = new URLSearchParams();
-    formBody.append('access_token', config.accessToken);
+    formBody.append('access_token', ctx.accessToken);
     formBody.append('async', '1');
     formBody.append('batch', JSON.stringify([batchItem]));
 
-    const response = await fetch(`https://graph.facebook.com/${config.apiVersion}/`, {
+    const response = await fetch(`https://graph.facebook.com/${ctx.apiVersion}/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: formBody.toString(),
@@ -210,7 +210,7 @@ async function duplicateAdSet(args: any): Promise<any> {
   });
 
   // Poll for completion — the session result contains the new adset id in results[0].body
-  const newAdSetId = await pollAsyncSessionForAdSet(sessionId);
+  const newAdSetId = await pollAsyncSessionForAdSet(ctx, sessionId);
 
   return {
     success: true,
@@ -221,7 +221,7 @@ async function duplicateAdSet(args: any): Promise<any> {
 }
 
 /** Like pollAsyncSession but extracts copied_adset_id from the result. */
-async function pollAsyncSessionForAdSet(sessionId: string, maxAttempts = 50): Promise<string> {
+async function pollAsyncSessionForAdSet(ctx: TenantContext, sessionId: string, maxAttempts = 50): Promise<string> {
   const BASE_MS = 5_000;
   const MAX_MS = 30_000;
 
@@ -232,7 +232,7 @@ async function pollAsyncSessionForAdSet(sessionId: string, maxAttempts = 50): Pr
     }
 
     const session = await rateLimitedCall(() =>
-      graphGet(sessionId, {
+      graphGet(ctx, sessionId, {
         fields: 'id,status,result,results,error_message,error_code,error_subcode,error_user_title,error_user_msg',
       }),
     );
@@ -271,10 +271,10 @@ async function pollAsyncSessionForAdSet(sessionId: string, maxAttempts = 50): Pr
   throw new Error(`Async copy session ${sessionId} did not complete within ~20 minutes.`);
 }
 
-async function duplicateCreative(args: any): Promise<any> {
+async function duplicateCreative(ctx: TenantContext, args: any): Promise<any> {
   const { creative_id, new_name, body_override, headline_override, cta_type_override, url_override } = args;
 
-  if (config.dryRun) {
+  if (ctx.dryRun) {
     return {
       dry_run: true,
       message: `Simulated: Duplicate creative ${creative_id}`,
@@ -283,10 +283,10 @@ async function duplicateCreative(args: any): Promise<any> {
 
   // Step 1: Fetch existing creative
   const qp = new URLSearchParams({
-    access_token: config.accessToken,
+    access_token: ctx.accessToken,
     fields: 'id,name,object_story_spec,asset_feed_spec',
   });
-  const response = await fetch(`https://graph.facebook.com/${config.apiVersion}/${creative_id}?${qp.toString()}`);
+  const response = await fetch(`https://graph.facebook.com/${ctx.apiVersion}/${creative_id}?${qp.toString()}`);
   const creative = await response.json() as any;
   if (!response.ok || creative.error) {
     const e = creative.error ?? {};
@@ -332,21 +332,21 @@ async function duplicateCreative(args: any): Promise<any> {
   };
 
   const newCreative = await rateLimitedCall(() =>
-    graphPost(`${config.adAccountId}/adcreatives`, creativeParams),
+    graphPost(ctx, `${ctx.adAccountId}/adcreatives`, creativeParams),
   );
 
   return {
     success: true,
     new_creative_id: newCreative.id,
     new_name: creativeParams.name,
-    account_id: config.adAccountId,
+    account_id: ctx.adAccountId,
   };
 }
 
-async function duplicateCampaign(args: any): Promise<any> {
+async function duplicateCampaign(ctx: TenantContext, args: any): Promise<any> {
   const { campaign_id, new_campaign_name, funnel_urls, daily_budget_per_adset } = args;
 
-  if (config.dryRun) {
+  if (ctx.dryRun) {
     return {
       dry_run: true,
       message: `Simulated: Duplicate campaign ${campaign_id} as "${new_campaign_name}"`,
@@ -370,11 +370,11 @@ async function duplicateCampaign(args: any): Promise<any> {
     };
 
     const formBody = new URLSearchParams();
-    formBody.append('access_token', config.accessToken);
+    formBody.append('access_token', ctx.accessToken);
     formBody.append('async', '1');
     formBody.append('batch', JSON.stringify([batchItem]));
 
-    const response = await fetch(`https://graph.facebook.com/${config.apiVersion}/`, {
+    const response = await fetch(`https://graph.facebook.com/${ctx.apiVersion}/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: formBody.toString(),
@@ -393,10 +393,10 @@ async function duplicateCampaign(args: any): Promise<any> {
     return sid;
   });
 
-  const newCampaignId = await pollAsyncSession(sessionId);
+  const newCampaignId = await pollAsyncSession(ctx, sessionId);
 
   // Step 2: Fetch all ad sets in the new campaign (auto-paginated)
-  const adSets = await fetchAllAdSets(newCampaignId);
+  const adSets = await fetchAllAdSets(ctx, newCampaignId);
 
   if (adSets.length === 0) {
     return {
@@ -430,13 +430,13 @@ async function duplicateCampaign(args: any): Promise<any> {
     // Update budget if requested
     if (daily_budget_per_adset != null) {
       const budgetCents = Math.round(daily_budget_per_adset * 100);
-      await rateLimitedCall(() => graphPost(adSet.id, { daily_budget: String(budgetCents) }));
+      await rateLimitedCall(() => graphPost(ctx, adSet.id, { daily_budget: String(budgetCents) }));
     }
 
     // Swap funnel URLs if provided
     if (funnelUrl) {
       const adsResponse = await rateLimitedCall(() =>
-        graphGet(`${adSet.id}/ads`, { fields: 'id,name,creative{id,object_story_spec}', limit: 50 }),
+        graphGet(ctx, `${adSet.id}/ads`, { fields: 'id,name,creative{id,object_story_spec}', limit: 50 }),
       );
       const ads: any[] = adsResponse.data ?? [];
 
@@ -462,11 +462,11 @@ async function duplicateCampaign(args: any): Promise<any> {
 
         // Creatives are immutable — create a new one, then point the ad to it
         const newCreative = await rateLimitedCall(() =>
-          graphPost(`${config.adAccountId}/adcreatives`, { object_story_spec: updatedSpec }),
+          graphPost(ctx, `${ctx.adAccountId}/adcreatives`, { object_story_spec: updatedSpec }),
         );
 
         await rateLimitedCall(() =>
-          graphPost(ad.id, { creative: { creative_id: newCreative.id } }),
+          graphPost(ctx, ad.id, { creative: { creative_id: newCreative.id } }),
         );
       }
     }

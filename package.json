@@ -4,20 +4,45 @@
   "description": "Best-in-class MCP server for Meta Marketing API",
   "type": "module",
   "main": "dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./tools": {
+      "types": "./dist/exports.d.ts",
+      "default": "./dist/exports.js"
+    },
+    "./tenant-context": {
+      "types": "./dist/tenant-context.d.ts",
+      "default": "./dist/tenant-context.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "tools": [
+        "dist/exports.d.ts"
+      ],
+      "tenant-context": [
+        "dist/tenant-context.d.ts"
+      ]
+    }
+  },
   "scripts": {
     "build": "rm -rf dist && tsc",
     "start": "node dist/index.js",
+    "start:http": "node dist/server-http.js",
     "dev": "tsx src/index.ts",
     "setup": "tsx scripts/get-token.ts",
     "setup-system-user": "tsx scripts/setup-system-user.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "facebook-nodejs-business-sdk": "^22.0.3",
-    "zod": "^3.24.2",
-    "sharp": "^0.33.5"
+    "express": "^5.2.1",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^22.15.3",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"

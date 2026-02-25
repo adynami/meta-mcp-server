@@ -5,8 +5,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { config, validateConfig } from './config.js';
-import { initApi } from './meta-client.js';
+import { config, validateConfig, tenantContextFromEnv } from './config.js';
 import { managementTools, handleManagementTool } from './tools/management.js';
 import { analystTools, handleAnalystTool } from './tools/analyst.js';
 import { creatorTools, handleCreatorTool } from './tools/creator.js';
@@ -73,7 +72,7 @@ const adLibraryToolNames = new Set(adLibraryTools.map(t => t.name));
 const performanceToolNames = new Set(performanceTools.map(t => t.name));
 
 const server = new Server(
-  { name: 'meta-marketing-mcp', version: '1.4.0' },
+  { name: 'meta-marketing-mcp', version: '2.0.0' },
   { capabilities: { tools: {} } },
 );
 
@@ -83,50 +82,51 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+  const ctx = tenantContextFromEnv();
 
   try {
     let result: any;
 
     if (managementToolNames.has(name)) {
-      result = await handleManagementTool(name, args ?? {});
+      result = await handleManagementTool(ctx, name, args ?? {});
     } else if (analystToolNames.has(name)) {
-      result = await handleAnalystTool(name, args ?? {});
+      result = await handleAnalystTool(ctx, name, args ?? {});
     } else if (creatorToolNames.has(name)) {
-      result = await handleCreatorTool(name, args ?? {});
+      result = await handleCreatorTool(ctx, name, args ?? {});
     } else if (debugToolNames.has(name)) {
-      result = await handleDebugTool(name, args ?? {});
+      result = await handleDebugTool(ctx, name, args ?? {});
     } else if (duplicatorToolNames.has(name)) {
-      result = await handleDuplicatorTool(name, args ?? {});
+      result = await handleDuplicatorTool(ctx, name, args ?? {});
     } else if (audienceToolNames.has(name)) {
-      result = await handleAudienceTool(name, args ?? {});
+      result = await handleAudienceTool(ctx, name, args ?? {});
     } else if (updaterToolNames.has(name)) {
-      result = await handleUpdaterTool(name, args ?? {});
+      result = await handleUpdaterTool(ctx, name, args ?? {});
     } else if (pixelToolNames.has(name)) {
-      result = await handlePixelTool(name, args ?? {});
+      result = await handlePixelTool(ctx, name, args ?? {});
     } else if (rulesToolNames.has(name)) {
-      result = await handleRulesTool(name, args ?? {});
+      result = await handleRulesTool(ctx, name, args ?? {});
     } else if (leadsToolNames.has(name)) {
-      result = await handleLeadsTool(name, args ?? {});
+      result = await handleLeadsTool(ctx, name, args ?? {});
     } else if (libraryToolNames.has(name)) {
-      result = await handleLibraryTool(name, args ?? {});
+      result = await handleLibraryTool(ctx, name, args ?? {});
     } else if (conversionsToolNames.has(name)) {
-      result = await handleConversionsTool(name, args ?? {});
+      result = await handleConversionsTool(ctx, name, args ?? {});
     } else if (catalogToolNames.has(name)) {
-      result = await handleCatalogTool(name, args ?? {});
+      result = await handleCatalogTool(ctx, name, args ?? {});
     } else if (testingToolNames.has(name)) {
-      result = await handleTestingTool(name, args ?? {});
+      result = await handleTestingTool(ctx, name, args ?? {});
     } else if (valueRulesToolNames.has(name)) {
-      result = await handleValueRulesTool(name, args ?? {});
+      result = await handleValueRulesTool(ctx, name, args ?? {});
     } else if (budgetScheduleToolNames.has(name)) {
-      result = await handleBudgetScheduleTool(name, args ?? {});
+      result = await handleBudgetScheduleTool(ctx, name, args ?? {});
     } else if (copyToolNames.has(name)) {
-      result = await handleCopyTool(name, args ?? {});
+      result = await handleCopyTool(ctx, name, args ?? {});
     } else if (briefToolNames.has(name)) {
-      result = await handleBriefTool(name, args ?? {});
+      result = await handleBriefTool(ctx, name, args ?? {});
     } else if (adLibraryToolNames.has(name)) {
-      result = await handleAdLibraryTool(name, args ?? {});
+      result = await handleAdLibraryTool(ctx, name, args ?? {});
     } else if (performanceToolNames.has(name)) {
-      result = await handlePerformanceTool(name, args ?? {});
+      result = await handlePerformanceTool(ctx, name, args ?? {});
     } else {
       return {
         content: [{ type: 'text', text: `Unknown tool "${name}". Available: ${ALL_TOOLS.map(t => t.name).join(', ')}` }],
@@ -182,7 +182,6 @@ function extractErrorMessage(error: any): string {
 
 async function main(): Promise<void> {
   validateConfig();
-  initApi();
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

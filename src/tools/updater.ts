@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import type { TenantContext } from '../tenant-context.js';
 import { updateCampaign, updateAdSet, updateAd } from '../meta-client.js';
 
 export const updaterTools = [
@@ -154,16 +154,16 @@ export const updaterTools = [
   },
 ];
 
-export async function handleUpdaterTool(name: string, args: any): Promise<any> {
+export async function handleUpdaterTool(ctx: TenantContext, name: string, args: any): Promise<any> {
   switch (name) {
-    case 'meta_update_campaign': return handleUpdateCampaign(args);
-    case 'meta_update_adset': return handleUpdateAdSet(args);
-    case 'meta_update_ad': return handleUpdateAd(args);
+    case 'meta_update_campaign': return handleUpdateCampaign(ctx, args);
+    case 'meta_update_adset': return handleUpdateAdSet(ctx, args);
+    case 'meta_update_ad': return handleUpdateAd(ctx, args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
 }
 
-async function handleUpdateCampaign(args: any): Promise<any> {
+async function handleUpdateCampaign(ctx: TenantContext, args: any): Promise<any> {
   const params: Record<string, any> = {};
   if (args.name) params.name = args.name;
   if (args.status) params.status = args.status;
@@ -176,15 +176,15 @@ async function handleUpdateCampaign(args: any): Promise<any> {
     return { success: false, error: 'No fields to update were provided.' };
   }
 
-  if (config.dryRun) {
+  if (ctx.dryRun) {
     return { dry_run: true, message: `Simulated update campaign ${args.campaign_id}`, changes: params };
   }
 
-  await updateCampaign(args.campaign_id, params);
+  await updateCampaign(ctx, args.campaign_id, params);
   return { success: true, campaign_id: args.campaign_id, updated: summarizeChanges(args, params) };
 }
 
-async function handleUpdateAdSet(args: any): Promise<any> {
+async function handleUpdateAdSet(ctx: TenantContext, args: any): Promise<any> {
   const params: Record<string, any> = {};
   if (args.name) params.name = args.name;
   if (args.status) params.status = args.status;
@@ -238,15 +238,15 @@ async function handleUpdateAdSet(args: any): Promise<any> {
     return { success: false, error: 'No fields to update were provided.' };
   }
 
-  if (config.dryRun) {
+  if (ctx.dryRun) {
     return { dry_run: true, message: `Simulated update adset ${args.adset_id}`, changes: Object.keys(params) };
   }
 
-  await updateAdSet(args.adset_id, params);
+  await updateAdSet(ctx, args.adset_id, params);
   return { success: true, adset_id: args.adset_id, updated: summarizeChanges(args, params) };
 }
 
-async function handleUpdateAd(args: any): Promise<any> {
+async function handleUpdateAd(ctx: TenantContext, args: any): Promise<any> {
   const params: Record<string, any> = {};
   if (args.name) params.name = args.name;
   if (args.status) params.status = args.status;
@@ -255,11 +255,11 @@ async function handleUpdateAd(args: any): Promise<any> {
     return { success: false, error: 'No fields to update were provided. Provide name and/or status.' };
   }
 
-  if (config.dryRun) {
+  if (ctx.dryRun) {
     return { dry_run: true, message: `Simulated update ad ${args.ad_id}`, changes: params };
   }
 
-  await updateAd(args.ad_id, params);
+  await updateAd(ctx, args.ad_id, params);
   return { success: true, ad_id: args.ad_id, updated: params };
 }
 

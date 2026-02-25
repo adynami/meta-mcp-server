@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import type { TenantContext } from '../tenant-context.js';
 import { rateLimitedCall } from '../utils/rate-limiter.js';
 import { graphGet, graphPost } from '../utils/graph.js';
 
@@ -129,21 +129,21 @@ This is a write operation — confirm all details before calling.`,
 
 // ── Handler ──
 
-export async function handleLeadsTool(name: string, args: any): Promise<any> {
+export async function handleLeadsTool(ctx: TenantContext, name: string, args: any): Promise<any> {
   switch (name) {
-    case 'meta_list_lead_forms': return listLeadForms(args);
-    case 'meta_create_lead_form': return createLeadForm(args);
-    case 'meta_get_leads': return getLeads(args);
+    case 'meta_list_lead_forms': return listLeadForms(ctx, args);
+    case 'meta_create_lead_form': return createLeadForm(ctx, args);
+    case 'meta_get_leads': return getLeads(ctx, args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
 }
 
 // ── Implementations ──
 
-async function listLeadForms(args: any): Promise<any> {
+async function listLeadForms(ctx: TenantContext, args: any): Promise<any> {
   const concise = args.response_format === 'concise';
   const result = await rateLimitedCall(() =>
-    graphGet(`${config.adAccountId}/leadgen_forms`, {
+    graphGet(ctx, `${ctx.adAccountId}/leadgen_forms`, {
       fields: concise ? 'id,name' : 'id,name,status,leads_count,created_time',
       limit: args.limit ?? 25,
     }),
@@ -179,8 +179,8 @@ const STANDARD_KEYS: Record<string, string> = {
   WORK_PHONE: 'work_phone_number',
 };
 
-async function createLeadForm(args: any): Promise<any> {
-  if (config.dryRun) {
+async function createLeadForm(ctx: TenantContext, args: any): Promise<any> {
+  if (ctx.dryRun) {
     return {
       dry_run: true,
       message: `Simulated: create lead form "${args.name}" on page ${args.page_id}`,
@@ -232,7 +232,7 @@ async function createLeadForm(args: any): Promise<any> {
     });
   }
 
-  const result = await rateLimitedCall(() => graphPost(`${args.page_id}/leadgen_forms`, formParams));
+  const result = await rateLimitedCall(() => graphPost(ctx, `${args.page_id}/leadgen_forms`, formParams));
 
   return {
     success: true,
@@ -244,14 +244,14 @@ async function createLeadForm(args: any): Promise<any> {
   };
 }
 
-async function getLeads(args: any): Promise<any> {
+async function getLeads(ctx: TenantContext, args: any): Promise<any> {
   const params: Record<string, any> = {
     fields: 'id,created_time,field_data',
     limit: args.limit ?? 25,
   };
   if (args.after) params.after = args.after;
 
-  const result = await rateLimitedCall(() => graphGet(`${args.form_id}/leads`, params));
+  const result = await rateLimitedCall(() => graphGet(ctx, `${args.form_id}/leads`, params));
 
   const leads = (result.data ?? []).map((lead: any) => {
     // Convert field_data array to a flat key-value object

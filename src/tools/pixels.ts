@@ -1,3 +1,4 @@
+import type { TenantContext } from '../tenant-context.js';
 import { listPixels, getPixelStats } from '../meta-client.js';
 import { resolveRange, type TimeRangeKey } from '../utils/date-ranges.js';
 
@@ -30,16 +31,16 @@ export const pixelTools = [
   },
 ];
 
-export async function handlePixelTool(name: string, args: any): Promise<any> {
+export async function handlePixelTool(ctx: TenantContext, name: string, args: any): Promise<any> {
   switch (name) {
-    case 'meta_list_pixels': return handleListPixels(args);
-    case 'meta_get_pixel_events': return handleGetPixelEvents(args);
+    case 'meta_list_pixels': return handleListPixels(ctx, args);
+    case 'meta_get_pixel_events': return handleGetPixelEvents(ctx, args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
 }
 
-async function handleListPixels(args: any): Promise<any> {
-  const pixels = await listPixels(args.limit ?? 10);
+async function handleListPixels(ctx: TenantContext, args: any): Promise<any> {
+  const pixels = await listPixels(ctx, args.limit ?? 10);
   return {
     pixels: pixels.map((p: any) => ({
       id: p.id,
@@ -51,7 +52,7 @@ async function handleListPixels(args: any): Promise<any> {
   };
 }
 
-async function handleGetPixelEvents(args: any): Promise<any> {
+async function handleGetPixelEvents(ctx: TenantContext, args: any): Promise<any> {
   const rangeKey = (args.time_range ?? 'last_7d') as TimeRangeKey;
   const range = resolveRange(rangeKey);
 
@@ -59,7 +60,7 @@ async function handleGetPixelEvents(args: any): Promise<any> {
   const startUnix = Math.floor(new Date(range.since + 'T00:00:00Z').getTime() / 1000);
   const endUnix = Math.floor(new Date(range.until + 'T23:59:59Z').getTime() / 1000);
 
-  const data = await getPixelStats(args.pixel_id, {
+  const data = await getPixelStats(ctx, args.pixel_id, {
     start_time: String(startUnix),
     end_time: String(endUnix),
     aggregation: 'event_name',

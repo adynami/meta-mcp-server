@@ -1,36 +1,12 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { config } from '../config.js';
+import type { TenantContext } from '../tenant-context.js';
 import {
   createCampaign, createAdSet, createAd,
-  uploadAdImage, uploadAdVideo, deleteCampaign, deleteAdSet,
+  deleteCampaign, deleteAdSet,
   getAccountContext,
 } from '../meta-client.js';
 import { buildTargetingSpec } from '../utils/targeting.js';
 
 export const creatorTools = [
-  {
-    name: 'meta_upload_video',
-    description: `Upload a local video file to the Meta ad account for use in video ads. Validates file type (mp4/mov/avi/mkv) and size (<4GB, but keep under 1GB for best results). Returns a video_id needed by meta_deploy_campaign when using creative_type=video. Meta processes the video asynchronously after upload — allow ~5 minutes before using it in an ad.`,
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        local_file_path: { type: 'string', description: 'Absolute path to the video file on disk' },
-      },
-      required: ['local_file_path'],
-    },
-  },
-  {
-    name: 'meta_upload_image',
-    description: `Upload a local image file to the Meta ad account for use in ads. Use when the user wants to create an ad and has an image file ready. Validates file type (jpg/png/gif/webp), size (<30MB), and aspect ratio before uploading. Returns an image_hash needed by meta_deploy_campaign.`,
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        local_file_path: { type: 'string', description: 'Absolute path to the image file on disk' },
-      },
-      required: ['local_file_path'],
-    },
-  },
   {
     name: 'meta_deploy_campaign',
     description: `Create a complete campaign in one step: Campaign + Ad Set + Ad. Supports all Meta budget modes (CBO/ABO), bid strategies (lowest cost, bid cap, cost cap, min ROAS), and daily/lifetime budgets. This is an atomic operation — if any step fails, all previous steps are rolled back automatically (no zombie campaigns). Requires an image_hash from meta_upload_image. This is a write operation — confirm details with the user before calling.`,
@@ -177,7 +153,7 @@ export const creatorTools = [
         creative_type: {
           type: 'string',
           enum: ['image', 'video', 'carousel'],
-          description: 'image (default): single image ad using image_hash. video: single video ad using video_id. carousel: multi-card ad using cards array (2–10 cards).',
+          description: 'image (default): single image ad using image_hash. video: single video ad using video_id. carousel: multi-card ad using cards array (2-10 cards).',
         },
         image_hash: { type: 'string', description: 'Image hash from meta_upload_image. Required for creative_type=image (default).' },
         video_id: { type: 'string', description: 'Video ID from meta_upload_video. Required for creative_type=video.' },
@@ -254,9 +230,9 @@ Best for:
 - Maximizing performance with limited budget
 
 IMPORTANT — always confirm with the user before calling:
-1. Which images to test? (provide 2–10 image hashes from meta_upload_image — each will be tested)
-2. Which headlines to test? (2–5 variations)
-3. Which body texts to test? (2–5 variations)
+1. Which images to test? (provide 2-10 image hashes from meta_upload_image — each will be tested)
+2. Which headlines to test? (2-5 variations)
+3. Which body texts to test? (2-5 variations)
 4. Campaign objective and budget?
 5. Which Facebook Page to run from?
 6. Destination URL?
@@ -277,21 +253,21 @@ This is a write operation — confirm all details before calling.`,
           items: { type: 'string' },
           minItems: 2,
           maxItems: 10,
-          description: 'Image hashes from meta_upload_image. Provide 2–10 images to test. Meta will test each one.',
+          description: 'Image hashes from meta_upload_image. Provide 2-10 images to test. Meta will test each one.',
         },
         headlines: {
           type: 'array',
           items: { type: 'string' },
           minItems: 2,
           maxItems: 5,
-          description: 'Headline variations to test. Provide 2–5 options.',
+          description: 'Headline variations to test. Provide 2-5 options.',
         },
         bodies: {
           type: 'array',
           items: { type: 'string' },
           minItems: 2,
           maxItems: 5,
-          description: 'Body text (primary text) variations to test. Provide 2–5 options.',
+          description: 'Body text (primary text) variations to test. Provide 2-5 options.',
         },
         link_url: { type: 'string', description: 'Destination URL for all creative combinations' },
         call_to_action: {
@@ -325,104 +301,16 @@ This is a write operation — confirm all details before calling.`,
   },
 ];
 
-export async function handleCreatorTool(name: string, args: any): Promise<any> {
+export async function handleCreatorTool(ctx: TenantContext, name: string, args: any): Promise<any> {
   switch (name) {
-    case 'meta_upload_image': return handleUpload(args);
-    case 'meta_upload_video': return handleVideoUpload(args);
-    case 'meta_deploy_campaign': return handleDeploy(args);
-    case 'meta_deploy_dco_campaign': return handleDeployDco(args);
+    case 'meta_deploy_campaign': return handleDeploy(ctx, args);
+    case 'meta_deploy_dco_campaign': return handleDeployDco(ctx, args);
     default: throw new Error(`Unknown tool: ${name}`);
   }
 }
 
-const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
-const MAX_FILE_SIZE = 30 * 1024 * 1024;
-
-async function handleUpload(args: any): Promise<any> {
-  const filePath = path.resolve(args.local_file_path);
-
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`File not found: ${filePath}. Provide an absolute path to an existing image file.`);
-  }
-
-  const ext = path.extname(filePath).toLowerCase();
-  if (!ALLOWED_EXTENSIONS.includes(ext)) {
-    throw new Error(`Unsupported file type "${ext}". Use one of: ${ALLOWED_EXTENSIONS.join(', ')}`);
-  }
-
-  const stat = fs.statSync(filePath);
-  if (stat.size > MAX_FILE_SIZE) {
-    throw new Error(`File is ${(stat.size / 1024 / 1024).toFixed(1)}MB, max is 30MB. Compress or resize the image.`);
-  }
-  if (stat.size === 0) {
-    throw new Error('File is empty (0 bytes).');
-  }
-
-  let dimensionWarning: string | null = null;
-  try {
-    const sharp = await import('sharp');
-    const metadata = await sharp.default(filePath).metadata();
-    if (metadata.width && metadata.height) {
-      const ratio = metadata.width / metadata.height;
-      if (ratio < 0.5 || ratio > 2.0) {
-        dimensionWarning = `Aspect ratio ${ratio.toFixed(2)}:1 — may crop poorly. Recommended: 1:1 or 1.91:1.`;
-      }
-    }
-  } catch { /* sharp not available */ }
-
-  if (config.dryRun) {
-    return { dry_run: true, message: `Simulated upload: ${path.basename(filePath)} (${(stat.size / 1024).toFixed(0)}KB)`, ...(dimensionWarning && { warning: dimensionWarning }) };
-  }
-
-  const result = await uploadAdImage(filePath);
-  return { image_hash: result.hash, ...(dimensionWarning && { warning: dimensionWarning }) };
-}
-
-const ALLOWED_VIDEO_EXTENSIONS = ['.mp4', '.mov', '.avi', '.mkv', '.m4v', '.wmv'];
-const MAX_VIDEO_SIZE = 4 * 1024 * 1024 * 1024; // 4 GB
-
-async function handleVideoUpload(args: any): Promise<any> {
-  const filePath = path.resolve(args.local_file_path);
-
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`File not found: ${filePath}. Provide an absolute path to an existing video file.`);
-  }
-
-  const ext = path.extname(filePath).toLowerCase();
-  if (!ALLOWED_VIDEO_EXTENSIONS.includes(ext)) {
-    throw new Error(`Unsupported file type "${ext}". Use one of: ${ALLOWED_VIDEO_EXTENSIONS.join(', ')}`);
-  }
-
-  const stat = fs.statSync(filePath);
-  if (stat.size > MAX_VIDEO_SIZE) {
-    throw new Error(`File is ${(stat.size / 1024 / 1024 / 1024).toFixed(2)}GB, max is 4GB.`);
-  }
-  if (stat.size === 0) {
-    throw new Error('File is empty (0 bytes).');
-  }
-
-  const sizeWarning = stat.size > 1024 * 1024 * 1024
-    ? `File is ${(stat.size / 1024 / 1024 / 1024).toFixed(2)}GB — upload may take a while.`
-    : null;
-
-  if (config.dryRun) {
-    return {
-      dry_run: true,
-      message: `Simulated video upload: ${path.basename(filePath)} (${(stat.size / 1024 / 1024).toFixed(1)}MB)`,
-      ...(sizeWarning && { warning: sizeWarning }),
-    };
-  }
-
-  const result = await uploadAdVideo(filePath);
-  return {
-    video_id: result.video_id,
-    note: 'Meta processes videos asynchronously. Allow ~5 minutes before using in an ad.',
-    ...(sizeWarning && { warning: sizeWarning }),
-  };
-}
-
-async function handleDeploy(args: any): Promise<any> {
-  const account = await getAccountContext();
+async function handleDeploy(ctx: TenantContext, args: any): Promise<any> {
+  const account = await getAccountContext(ctx);
   const budgetCents = Math.round(args.daily_budget * 100);
   const status = args.start_immediately === false ? 'PAUSED' : 'ACTIVE';
   const budgetLevel = (args.budget_level ?? 'CBO') as 'CBO' | 'ABO';
@@ -466,7 +354,7 @@ async function handleDeploy(args: any): Promise<any> {
     }
   }
 
-  if (config.dryRun) {
+  if (ctx.dryRun) {
     return {
       dry_run: true,
       message: 'Simulated deployment',
@@ -500,7 +388,7 @@ async function handleDeploy(args: any): Promise<any> {
     if (args.start_time) campaignParams.start_time = args.start_time;
     if (budgetType === 'lifetime' && args.end_time) campaignParams.stop_time = args.end_time;
 
-    const campaignResult = await createCampaign(campaignParams);
+    const campaignResult = await createCampaign(ctx, campaignParams);
     campaignId = campaignResult.id;
     steps.push(`Campaign ${campaignId}`);
 
@@ -556,14 +444,14 @@ async function handleDeploy(args: any): Promise<any> {
       };
     }
 
-    const adsetResult = await createAdSet(adsetParams);
+    const adsetResult = await createAdSet(ctx, adsetParams);
     adsetId = adsetResult.id;
     steps.push(`Ad Set ${adsetId}`);
 
     const objectStorySpec = buildObjectStorySpec(creativeType, args);
     const creative: Record<string, any> = { object_story_spec: objectStorySpec };
     if (args.url_tags) creative.url_tags = args.url_tags;
-    const adResult = await createAd({
+    const adResult = await createAd(ctx, {
       adset_id: adsetId,
       name: `${args.campaign_name} - Ad`,
       status,
@@ -585,8 +473,8 @@ async function handleDeploy(args: any): Promise<any> {
     };
   } catch (error: any) {
     const rollbackErrors: string[] = [];
-    if (adsetId) { try { await deleteAdSet(adsetId); } catch (e: any) { rollbackErrors.push(e.message); } }
-    if (campaignId) { try { await deleteCampaign(campaignId); } catch (e: any) { rollbackErrors.push(e.message); } }
+    if (adsetId) { try { await deleteAdSet(ctx, adsetId); } catch (e: any) { rollbackErrors.push(e.message); } }
+    if (campaignId) { try { await deleteCampaign(ctx, campaignId); } catch (e: any) { rollbackErrors.push(e.message); } }
 
     // Dump full error to stderr for debugging
     console.error('[meta-mcp] deploy_campaign error at step:', steps.length === 0 ? 'campaign' : steps.length === 1 ? 'adset' : 'ad');
@@ -690,9 +578,9 @@ function objectiveToOptimization(objective: string): string {
   return map[objective] ?? 'LINK_CLICKS';
 }
 
-// ── DCO Campaign ──
+// -- DCO Campaign --
 
-async function handleDeployDco(args: any): Promise<any> {
+async function handleDeployDco(ctx: TenantContext, args: any): Promise<any> {
   const { image_hashes, headlines, bodies, link_url, page_id } = args;
 
   // Validate inputs
@@ -713,20 +601,20 @@ async function handleDeployDco(args: any): Promise<any> {
   const budgetCents = Math.round(args.daily_budget * 100);
   const cta = args.call_to_action ?? 'LEARN_MORE';
 
-  if (config.dryRun) {
+  if (ctx.dryRun) {
     return {
       dry_run: true,
-      message: `Simulated DCO campaign: "${args.campaign_name}" with ${image_hashes.length} images × ${headlines.length} headlines × ${bodies.length} bodies = ${image_hashes.length * headlines.length * bodies.length} combinations`,
+      message: `Simulated DCO campaign: "${args.campaign_name}" with ${image_hashes.length} images x ${headlines.length} headlines x ${bodies.length} bodies = ${image_hashes.length * headlines.length * bodies.length} combinations`,
     };
   }
 
-  const account = await getAccountContext();
+  const account = await getAccountContext(ctx);
   let campaignId: string | null = null;
   let adsetId: string | null = null;
 
   try {
     // Campaign
-    const campaignResult = await createCampaign({
+    const campaignResult = await createCampaign(ctx, {
       name: args.campaign_name,
       objective: args.objective,
       status,
@@ -748,7 +636,7 @@ async function handleDeployDco(args: any): Promise<any> {
     if (t?.custom_audiences?.length) targeting.custom_audiences = t.custom_audiences.map((a: any) => ({ id: a.id }));
 
     // Ad set with is_dynamic_creative: true
-    const adsetResult = await createAdSet({
+    const adsetResult = await createAdSet(ctx, {
       campaign_id: campaignId,
       name: `${args.campaign_name} - DCO Ad Set`,
       billing_event: 'IMPRESSIONS',
@@ -772,7 +660,7 @@ async function handleDeployDco(args: any): Promise<any> {
       ad_formats: ['SINGLE_IMAGE'],
     };
 
-    const adResult = await createAd({
+    const adResult = await createAd(ctx, {
       adset_id: adsetId,
       name: `${args.campaign_name} - DCO Ad`,
       status,
@@ -799,8 +687,8 @@ async function handleDeployDco(args: any): Promise<any> {
       note: 'Meta will automatically test all creative combinations and optimize delivery toward the best performers.',
     };
   } catch (error: any) {
-    if (adsetId) { try { await deleteAdSet(adsetId); } catch { /**/ } }
-    if (campaignId) { try { await deleteCampaign(campaignId); } catch { /**/ } }
+    if (adsetId) { try { await deleteAdSet(ctx, adsetId); } catch { /**/ } }
+    if (campaignId) { try { await deleteCampaign(ctx, campaignId); } catch { /**/ } }
 
     const fbErr = error?.response?.error ?? error?.error ?? null;
     const errorDetail = fbErr
