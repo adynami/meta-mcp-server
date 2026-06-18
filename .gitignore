@@ -8,3 +8,5 @@ claude-desktop-config.json
 *.pem
 *.key
 .next/
+.meta-token.json
+get-token-win.mjs

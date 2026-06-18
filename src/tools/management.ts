@@ -2,7 +2,7 @@ import type { TenantContext } from '../tenant-context.js';
 import { rateLimitedCall } from '../utils/rate-limiter.js';
 import {
   fetchCampaigns, fetchAdSets, fetchAds,
-  fetchAccountInsights, fetchCampaignInsights,
+  fetchAccountInsights, fetchCampaignInsights, fetchBreakdownInsights,
   updateCampaignStatus as apiUpdateStatus,
   readCampaign, readAdSet, readAd as apiReadAd,
   getAccountContext, createAd, searchTargeting,
@@ -597,10 +597,21 @@ async function getInsights(ctx: TenantContext, args: any): Promise<any> {
   }
 
   let raw: any[];
-  if (args.campaign_id && level === 'account') {
-    raw = await fetchCampaignInsights(ctx, args.campaign_id, { time_range: range });
+  if (level === 'account') {
+    raw = args.campaign_id
+      ? await fetchCampaignInsights(ctx, args.campaign_id, { time_range: range })
+      : await fetchAccountInsights(ctx, params);
   } else {
-    raw = await fetchAccountInsights(ctx, params);
+    // ad | adset | campaign: use the breakdown fetcher — it requests id/name fields
+    // (ad_id, ad_name, adset_id, campaign_id, ...) and scopes to {campaign_id}/insights
+    // when campaign_id is provided. fetchAccountInsights does neither.
+    const res = await fetchBreakdownInsights(ctx, {
+      campaign_id: args.campaign_id,
+      time_range: range,
+      level,
+      limit,
+    });
+    raw = res.data;
   }
 
   if (!raw.length) {
@@ -612,11 +623,17 @@ async function getInsights(ctx: TenantContext, args: any): Promise<any> {
   const mapRow = (row: any) => {
     const m = computeMetrics(row as RawInsightRow);
     const name = row.campaign_name ?? row.adset_name ?? row.ad_name ?? 'Account';
+    const ids = {
+      ...(row.ad_id && { ad_id: row.ad_id }),
+      ...(row.adset_id && { adset_id: row.adset_id }),
+      ...(row.campaign_id && { campaign_id: row.campaign_id }),
+    };
     if (concise) {
-      return { name, spend: m.spend, conversions: m.conversions, roas: m.roas, cpa: m.cpa };
+      return { name, ...ids, spend: m.spend, conversions: m.conversions, roas: m.roas, cpa: m.cpa };
     }
     return {
       name,
+      ...ids,
       period: `${row.date_start} to ${row.date_stop}`,
       spend: m.spend, impressions: m.impressions, clicks: m.clicks,
       ctr: m.ctr, cpc: m.cpc, cpm: m.cpm,
